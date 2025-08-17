@@ -14,7 +14,6 @@
 ## 🗂 목차
 - [프로젝트 요약](#-프로젝트-요약)
 - [프로젝트 배경](#-프로젝트-배경)
-- [기존 한계와 해결](#-기존-한계와-해결)
 - [데이터 구성](#-데이터-구성)
 - [전체 시스템 구성](#-전체-시스템-구성)
 - [결과 및 시각화](#-결과-및-시각화)
@@ -81,6 +80,57 @@
 - 데이터 품질: 중복 건수(UPSERT 전/후), 결측률, 시간 정렬 불일치 건수  
 - 대시보드 지연: DB 적재 완료 → Tableau 반영까지 평균 소요 시간
 
+### 🧪 운영/품질 지표 (KPI)
+실제 운영에서 **신뢰성·최신성**을 보장하기 위해 아래 지표들을 모니터링합니다.
+
+- **데이터 최신성(Freshness)**: `now() - max(fcst_time)` (목표: ≤ 30–40분)
+- **커버리지(Coverage)**: 최근 1시간 내 수집된 `admin_code` 개수 / 기대 지역 수
+- **결측률(Null Rate)**: 주요 지표(`r_total`, `uv_index`, `precip_mm` 등)의 null 비율
+- **증분 적재량(Load Volume)**: 30분 단위 신규/갱신 row 수
+- **대시보드 지연(Dashboard Latency)**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
+- **중복 차단(Dedup)**: PK/UPSERT 정책으로 **0** 유지(이상 징후 알림)
+
+<details>
+<summary><b>SQL 예시 (바로 실행 가능)</b></summary>
+
+```sql
+-- 1) Freshness (분)
+SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MAX(fcst_time)))/60.0, 1) AS freshness_min
+FROM risk_latest;
+
+-- 2) 최근 1시간 커버리지(지역 수)
+SELECT COUNT(DISTINCT admin_code) AS regions_covered_last_1h
+FROM risk_latest
+WHERE fcst_time >= NOW() - INTERVAL '1 hour';
+
+-- 3) 주요 지표 결측률
+SELECT
+  ROUND(100.0 * SUM(CASE WHEN r_total IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS r_total_null_pct,
+  ROUND(100.0 * SUM(CASE WHEN uv_index IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS uv_null_pct,
+  ROUND(100.0 * SUM(CASE WHEN precip_mm IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS precip_null_pct
+FROM risk_latest
+WHERE fcst_time >= NOW() - INTERVAL '6 hours';
+
+-- 4) 30분 단위 적재량
+SELECT DATE_TRUNC('minute', fcst_time)::timestamp(0) AS slot,
+       COUNT(*) AS rows_in_slot
+FROM risk_latest
+WHERE fcst_time >= NOW() - INTERVAL '6 hours'
+GROUP BY 1
+ORDER BY 1 DESC;
+
+-- 5) 최근 6시간 지역별 평균 위험도 (대시보드 타일용)
+SELECT admin_code,
+       ROUND(AVG(r_total)::numeric, 3) AS avg_risk_6h
+FROM risk_latest
+WHERE fcst_time >= NOW() - INTERVAL '6 hours'
+GROUP BY admin_code
+ORDER BY avg_risk_6h DESC
+LIMIT 20;
+
+```
+
+
 ---
 
 ## 🧭 기술적 도전 과제
@@ -94,7 +144,6 @@
 | Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃·리트라이 설정 | 간헐적 API 장애에도 파이프라인 복원력↑ |
 | Tableau가 수동 새로고침 의존 | Tableau ↔ PostgreSQL **라이브 연결** 전환(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
 | 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
-
 | 로컬 검증과 운영 데이터 소스가 달라 재현성 저하 | **Parquet + DB 병행** 운영: Parquet(로컬 검증/백업), DB(운영/시각화) | 개발-운영 격차 축소, 빠른 로컬 디버깅 가능 |
 
 > 시각화 전략: **Tableau 중심**(라이브 연결, 툴팁에 예측 시각·원천 지표 노출).  
