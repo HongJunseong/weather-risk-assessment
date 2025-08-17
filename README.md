@@ -59,12 +59,8 @@
 ---
 
 ## 🔧 전체 시스템 구성
-기상청 API
-│
-▼
-pandas 전처리/가공
-├──► Parquet/CSV 저장 ──► 로컬 검증/백업
-└──► PostgreSQL 적재 ──► Tableau 라이브 연결 / kepler.gl(쿼리 결과 Export)
+<img width="300" height="450" alt="disrisk structure" src="https://github.com/user-attachments/assets/3d34b8ae-f1f1-49be-a9ae-5ef79e82c827" />
+
 
 (모든 단계는 Airflow DAG로 30분 주기 자동 실행)
 
