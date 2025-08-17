@@ -90,7 +90,6 @@
 - **대시보드 지연(Dashboard Latency)**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
 - **중복 차단(Dedup)**: PK/UPSERT 정책으로 **0** 유지(이상 징후 알림)
 
-<details>
 <summary><b>SQL 예시 (바로 실행 가능)</b></summary>
 
 ```sql
