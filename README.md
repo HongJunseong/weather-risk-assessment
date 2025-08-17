@@ -3,7 +3,7 @@
 
 ![python](https://img.shields.io/badge/Python-3.11-blue)
 ![airflow](https://img.shields.io/badge/Apache%20Airflow-2.7.3-017CEE)
-![postgresql](https://img.shields.io/badge/PostgreSQL-15-336791)
+![postgresql](https://img.shields.io/badge/PostgreSQL-13-336791)
 ![tableau](https://img.shields.io/badge/Tableau-Visualization-orange)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
@@ -151,9 +151,9 @@ LIMIT 20;
 ---
 
 ## 🖥 인프라 및 개발 환경
-- **Python version**: Python 3.10
+- **Python version**: Python 3.11
 - **Workflow**: Apache Airflow 2.7.3 (Docker Compose)
-- **Storage**: Parquet/CSV + **PostgreSQL 15**
+- **Storage**: Parquet/CSV + **PostgreSQL 13**
 - **Visualization**: **Tableau Public**, **kepler.gl**
 
 ---
