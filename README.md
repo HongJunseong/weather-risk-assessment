@@ -7,7 +7,7 @@
 ![tableau](https://img.shields.io/badge/Tableau-Visualization-orange)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
-> **요약 한 줄**: 기상청 API를 30분 단위로 수집해 **준실시간(near real-time)** 으로 위험도를 **평가/산출**하고, **Tableau**와 **kepler.gl**로 직관적으로 시각화합니다. 현재 **Parquet + PostgreSQL 병행 운영**으로 로컬 검증과 DB 기반 자동화를 동시에 지원합니다.
+> **요약 한 줄**: 기상청 API를 30분 단위로 수집해 **준실시간(near real-time)** 으로 위험도를 **평가/산출**하고, **Tableau**와 **kepler.gl**로 직관적으로 시각화합니다. 현재 **Parquet + PostgreSQL 병행 운영**으로 로컬 검증과 DB 기반 자동화를 동시에 지원하도록 하였습니다.
 
 ---
 
@@ -21,8 +21,6 @@
 - [기술적 도전 과제](#-기술적-도전-과제)
 - [인프라 및 개발 환경](#-인프라-및-개발-환경)
 - [PostgreSQL 도입 의의](#-postgresql-도입-의의)
-- [로드맵](#-로드맵)
-- [기여자](#-기여자)
 
 ---
 
@@ -61,17 +59,95 @@
 ---
 
 ## 🔧 전체 시스템 구성
-```mermaid
-flowchart LR
-    A[기상청 API] --> B[pandas 전처리/가공]
-    B --> C[Parquet/CSV 저장]
-    B --> D[PostgreSQL 적재]
-    C --> E[로컬 검증/백업]
-    D --> F[Tableau 라이브 연결]
-    D --> G[kepler.gl (SQL 결과 Export/Feed)]
-    subgraph H[Airflow DAG (30분 주기)]
-    A
-    B
-    C
-    D
-    end
+기상청 API
+│
+▼
+pandas 전처리/가공
+├──► Parquet/CSV 저장 ──► 로컬 검증/백업
+└──► PostgreSQL 적재 ──► Tableau 라이브 연결 / kepler.gl(쿼리 결과 Export)
+
+(모든 단계는 Airflow DAG로 30분 주기 자동 실행)
+
+
+- **Airflow DAG**: 주기 실행 · 오류 로그 · 자동 재시도(백오프)
+- **심볼릭 링크 `data/latest/`**: 최신 산출물에 고정 경로로 접근
+- **타임존**: `Asia/Seoul`(KST) 기준 스케줄링
+
+---
+
+## 📈 결과 및 시각화
+
+### 1) Tableau 대시보드
+- 지역별 **통합 위험도/지표 비교**(UV, 태풍 거리, 강수 등)
+- 툴팁에서 **예측 시각 · 세부 지표** 확인
+- **PostgreSQL 라이브 연결** 시 Airflow 갱신 → 대시보드 **자동 반영**
+- 스크린샷 예시(교체): `dashboards/tableau_overview.png`
+
+### 2) kepler.gl 시각화
+- **행정구역 중심 좌표** 기반 공간 시각화
+- **시간 슬라이더**로 시간별 위험도 변화 추적
+- 애니메이션/GIF로 **동적 공유** 가능
+- 예시(교체): `dashboards/kepler_timelapse.gif`
+
+---
+
+## 🧩 기술적 도전 과제
+1. **이질적 API 응답(XML/JSON) 통합** → 공통 파서 + pandas 스키마 표준화
+2. **시간대 정렬/결측치 처리** → `pendulum`으로 타임존 일원화(KST) 및 보정
+3. **DAG 안정성 강화** → 재시도/백오프 전략, 구조화된 로깅
+4. **DB 전환 병행 운영** → Parquet + PostgreSQL 동시 운영, Tableau/kepler.gl 연동 검증
+
+---
+
+## 🖥 인프라 및 개발 환경
+- **언어/라이브러리**: Python 3.11, pandas, requests, pendulum
+- **워크플로우**: Apache Airflow 2.7.3 (Docker Compose)
+- **저장소**: Parquet/CSV + **PostgreSQL 15**
+- **시각화**: **Tableau Public**, **kepler.gl**
+- **운영**: GitHub Actions(CI/CD), Docker
+
+---
+
+## 🗄 PostgreSQL 도입 의의
+
+**왜 DB까지?** 파일 대비 **무결성/자동화/확장성**에서 장점이 큽니다.
+
+- **데이터 관리/무결성**: PK·Index 기반으로 **중복 제어/품질 보장**
+- **업서트(UPSERT)**: 30분 주기 갱신 시 **중복 없이 최신화**
+- **SQL 탐색성**: 조건/집계/조인 기반 **즉시 분석**
+- **지리공간 확장(PostGIS)**: 태풍 경로/버퍼/폴리곤 교차 등 **공간 분석** 고도화
+
+### DDL 예시 (최소 스키마)
+
+```sql
+CREATE TABLE IF NOT EXISTS risk_latest (
+  fcst_time      timestamptz NOT NULL,
+  admin_code     varchar(20) NOT NULL,
+  r_total        numeric,
+  uv_index       numeric,
+  ty_distance_km numeric,
+  precip_mm      numeric,
+  PRIMARY KEY (fcst_time, admin_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_risk_latest_time  ON risk_latest (fcst_time);
+CREATE INDEX IF NOT EXISTS idx_risk_latest_admin ON risk_latest (admin_code);
+
+-- 공간데이터 확장 시:
+-- CREATE EXTENSION IF NOT EXISTS postgis;
+-- ALTER TABLE risk_latest ADD COLUMN geom geometry(Point, 4326);
+
+```
+
+### 분석 쿼리 예시
+
+```sql
+-- 최근 6시간 지역별 평균 위험도 Top-N
+SELECT admin_code, ROUND(AVG(r_total)::numeric, 3) AS avg_risk
+FROM risk_latest
+WHERE fcst_time >= NOW() - interval '6 hours'
+GROUP BY admin_code
+ORDER BY avg_risk DESC
+LIMIT 20;
+
+```
