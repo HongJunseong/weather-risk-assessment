@@ -90,17 +90,21 @@
 - **대시보드 지연(Dashboard Latency)**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
 - **중복 차단(Dedup)**: PK/UPSERT 정책으로 **0** 유지(이상 징후 알림)
 
-<summary><b>SQL 예시 (바로 실행 가능)</b></summary>
+<summary><b>SQL 예시</b></summary>
 
 ```sql
--- 1) Freshness (분)
-SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MAX(fcst_time)))/60.0, 1) AS freshness_min
-FROM risk_latest;
+-- A) 파이프라인 최신성(분) & 최신 예보 리드 타임(분)
+SELECT
+  ROUND( (EXTRACT(EPOCH FROM (NOW() - MAX(source_run_at))) / 60.0)::numeric , 1) AS pipeline_latency_min,
+  ROUND( (EXTRACT(EPOCH FROM (MAX(fcst_time) - NOW()))          / 60.0)::numeric , 1) AS latest_fcst_lead_min
+FROM risk_history_wide;
 
--- 2) 최근 1시간 커버리지(지역 수)
-SELECT COUNT(DISTINCT admin_code) AS regions_covered_last_1h
-FROM risk_latest
-WHERE fcst_time >= NOW() - INTERVAL '1 hour';
+-- B) 최신 fcst_time의 커버리지(그리드 수)와 로우 수
+WITH m AS (SELECT MAX(fcst_time) AS ft FROM risk_history_wide)
+SELECT
+  (SELECT COUNT(*) FROM risk_history_wide WHERE fcst_time = (SELECT ft FROM m)) AS rows_latest_step,
+  (SELECT COUNT(*) FROM (SELECT DISTINCT nx,ny FROM risk_history_wide
+                         WHERE fcst_time = (SELECT ft FROM m)) g) AS grids_latest_step;
 
 -- 3) 주요 지표 결측률
 SELECT
@@ -110,22 +114,28 @@ SELECT
 FROM risk_latest
 WHERE fcst_time >= NOW() - INTERVAL '6 hours';
 
--- 4) 30분 단위 적재량
-SELECT DATE_TRUNC('minute', fcst_time)::timestamp(0) AS slot,
-       COUNT(*) AS rows_in_slot
-FROM risk_latest
-WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY 1
-ORDER BY 1 DESC;
 
--- 5) 최근 6시간 지역별 평균 위험도 (대시보드 타일용)
-SELECT admin_code,
+-- D) 최근 실행에서 UPSERT 된 총 행 수(=해당 실행이 만진 행 수)
+WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
+SELECT COUNT(*) AS rows_touched_in_last_run
+FROM risk_history_wide
+WHERE source_run_at = (SELECT sr FROM s);
+
+
+-- E) 최근 6 시간 지역별 평균 위험도 (대시보드 타일용)
+SELECT admin_names_str,
        ROUND(AVG(r_total)::numeric, 3) AS avg_risk_6h
-FROM risk_latest
+FROM risk_history_wide
 WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY admin_code
+GROUP BY admin_names_str
 ORDER BY avg_risk_6h DESC
 LIMIT 20;
+
+-- F) 중복 점검(스냅샷 무시 모드에서 항상 0행이어야 정상)
+SELECT nx, ny, fcst_time, COUNT(*) AS dup_cnt
+FROM risk_history_wide
+GROUP BY 1,2,3
+HAVING COUNT(*) > 1;
 
 ```
 
