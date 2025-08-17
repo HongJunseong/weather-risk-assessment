@@ -53,7 +53,7 @@
 - **출처**: 기상청 API
   - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
   - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
-- **처리**: API → pandas 전처리 → **가중치(※ `risk/weights.yaml`)** 적용 → `risk_latest.parquet` 산출
+- **처리**: API 호출 → pandas 전처리 → **각 지표별 가중치(※ `risk/weights.yaml`)** 적용 → `risk_latest.parquet` 산출
 - **저장**: Parquet/CSV(로컬 검증) + **PostgreSQL**(시각화·자동화)
 
 ---
