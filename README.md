@@ -85,7 +85,7 @@
 - **중복 차단**: (nx,ny,fcst_time) 중복 0 유지
 - **대시보드 지연**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
 
-<summary><b>SQL 예시</b></summary>
+### SQL 예시
 
 ```sql
 -- A) 파이프라인 최신성(분) & 최신 예보 리드 타임(분)
