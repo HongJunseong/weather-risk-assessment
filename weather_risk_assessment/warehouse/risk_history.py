@@ -21,7 +21,6 @@ def pg_url() -> str:
 def ensure_table(engine):
     ddl = """
     CREATE TABLE IF NOT EXISTS risk_history_wide (
-      id            BIGSERIAL PRIMARY KEY,
       nx            INTEGER NOT NULL,
       ny            INTEGER NOT NULL,
       admin_names   TEXT,
@@ -44,10 +43,9 @@ def ensure_table(engine):
       R_uv          DOUBLE PRECISION,
       R_typhoon     DOUBLE PRECISION,
       R_total       DOUBLE PRECISION,
-      UNIQUE (nx, ny, fcst_time, source_run_at)
+      CONSTRAINT pk_rhw PRIMARY KEY (nx, ny, fcst_time)
     );
     CREATE INDEX IF NOT EXISTS idx_rhw_fcst ON risk_history_wide (fcst_time);
-    CREATE INDEX IF NOT EXISTS idx_rhw_grid_time ON risk_history_wide (nx, ny, fcst_time DESC);
     """
     with engine.begin() as conn:
         for stmt in ddl.strip().split(";"):
@@ -169,20 +167,18 @@ def main(risk_latest_path: str | None = None):
       (:nx, :ny, :admin_names, :base_date, :fcst_date, :fcst_time, :source_run_at,
        :RN1, :WSD, :UUU, :VVV, :T1H, :REH, :PTY, :SKY, :UVI,
        :R_rain, :R_heat, :R_wind, :R_uv, :R_typhoon, :R_total)
-    ON CONFLICT (nx, ny, fcst_time)
-    DO UPDATE
-    SET
-      base_date      = EXCLUDED.base_date,
-      fcst_date     = EXCLUDED.fcst_date,
-      source_run_at = EXCLUDED.source_run_at,
-      RN1 = EXCLUDED.RN1, WSD = EXCLUDED.WSD, UUU = EXCLUDED.UUU, VVV = EXCLUDED.VVV,
-      T1H = EXCLUDED.T1H, REH = EXCLUDED.REH, PTY = EXCLUDED.PTY, SKY = EXCLUDED.SKY, UVI = EXCLUDED.UVI,
-      R_rain = EXCLUDED.R_rain, R_heat = EXCLUDED.R_heat, R_wind = EXCLUDED.R_wind,
-      R_uv   = EXCLUDED.R_uv,   R_typhoon = EXCLUDED.R_typhoon, R_total = EXCLUDED.R_total,
-      admin_names = EXCLUDED.admin_names
-    -- 더 오래된 스냅샷은 무시
+    ON CONFLICT ON CONSTRAINT pk_rhw
+    DO UPDATE SET
+    base_date = EXCLUDED.base_date,
+    fcst_date = EXCLUDED.fcst_date,
+    source_run_at = EXCLUDED.source_run_at,
+    RN1 = EXCLUDED.RN1, WSD = EXCLUDED.WSD, UUU = EXCLUDED.UUU, VVV = EXCLUDED.VVV,
+    T1H = EXCLUDED.T1H, REH = EXCLUDED.REH, PTY = EXCLUDED.PTY, SKY = EXCLUDED.SKY, UVI = EXCLUDED.UVI,
+    R_rain = EXCLUDED.R_rain, R_heat = EXCLUDED.R_heat, R_wind = EXCLUDED.R_wind,
+    R_uv = EXCLUDED.R_uv, R_typhoon = EXCLUDED.R_typhoon, R_total = EXCLUDED.R_total,
+    admin_names = EXCLUDED.admin_names
     WHERE risk_history_wide.source_run_at IS NULL
-       OR EXCLUDED.source_run_at >= risk_history_wide.source_run_at;
+    OR EXCLUDED.source_run_at >= risk_history_wide.source_run_at;
     """)
 
     with engine.begin() as conn:
