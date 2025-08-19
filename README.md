@@ -20,6 +20,7 @@
 - [기술적 도전 과제](#-기술적-도전-과제)
 - [인프라 및 개발 환경](#-인프라-및-개발-환경)
 - [PostgreSQL 도입 의의](#-postgresql-도입-의의)
+- [향후 확장 아이디어](#-향후-확장-아이디어)
 
 ---
 
@@ -54,6 +55,13 @@
 <img width="350" height="520" alt="disrisk structure" src="https://github.com/user-attachments/assets/eba12d59-d31e-4637-9e71-0ac13a97d825" />
 
 
+```mermaid
+flowchart LR
+  A[Collectors<br>API 수집] --> B[Risk<br>위험도 계산]
+  B --> C[Warehouse<br>Postgres/Parquet]
+  C --> D[Visualization<br>Tableau / Kepler.gl]
+  A -->|Airflow DAG| B
+```
 
 (모든 단계는 Airflow DAG로 30분 주기 자동 실행)
 
@@ -235,3 +243,10 @@ WHERE nx = 60 AND ny = 127
 ORDER BY fcst_time;
 
 ```
+
+---
+## 🔮 향후 확장 아이디어
+- **머신러닝 기반 예측 모델 결합**: 단순 평가 → 위험도 예측으로 확장
+- **PostGIS 공간 분석 적용**: 태풍 경로와 행정구역 교차 연산으로 직접 피해 예측
+- **알림 시스템**: 특정 위험도 임계값 초과 시 Slack/이메일 자동 알림
+- **클라우드 배포**: AWS/GCP 상에서 서버리스 형태로 실행
