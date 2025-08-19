@@ -47,7 +47,7 @@
   - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
   - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
 - **처리**: API 호출 → pandas 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
-- **저장**: Parquet/CSV(로컬 검증) + **PostgreSQL**(시각화·자동화)
+- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **PostgreSQL**(적재)
 
 ---
 
