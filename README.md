@@ -69,10 +69,18 @@
 - 지역별 **종합 위험도** 및 지표별 비교(UV, 강수, 풍속, 태풍 거리)
 - **툴팁**에 예측 시각/원천 지표 노출
 - **PostgreSQL 라이브 연결**로 Airflow 갱신 시 자동 반영
+- 아래와 같이, 시간대 별로 위험도가 변화하는 모습을 확인할 수 있음
+  
+![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
+
 
 ### kepler.gl
 - 행정구역 중심 좌표를 **간단 확인용 지도**로 표시
 - 필요 시 특정 시점/구간만 **보조적으로** 사용
+- 아래와 같이, 현재 시각을 기준으로 한 전국 위험도를 파악할 수 있음
+
+<img width="520" height="500" alt="kepler gl (1)" src="https://github.com/user-attachments/assets/632f96c4-10d7-4db5-99b8-bdec51826492" />
+
 
 
 ### 운영/품질 지표 (KPI)
