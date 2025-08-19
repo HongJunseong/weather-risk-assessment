@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.log
+
+# 가상환경
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Airflow
+logs/
+*.pid
+*.err
+*.out
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Data
+# 수집 데이터 (parquet, csv 등)
+weather_risk_assessment/data/live/
+weather_risk_assessment/data/*.parquet
+weather_risk_assessment/data/*.csv
+weather_risk_assessment/data/*.geojson
+
+*.dbf
+*.shp
+*.prj
+*.sbn
+*.sbx
+*.shx
+
+# IDE/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

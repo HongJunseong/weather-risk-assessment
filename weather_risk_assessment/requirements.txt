@@ -1,0 +1,16 @@
+pandas
+requests
+python-dotenv
+tenacity
+pyarrow
+tqdm
+geopandas
+pyogrio
+fiona
+shapely
+rtree
+tableauserverclient>=0.26
+tableauhyperapi>=0.0.201
+SQLAlchemy<2.0
+psycopg2-binary
+pendulum
