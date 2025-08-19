@@ -57,7 +57,7 @@
 
 ```mermaid
 flowchart LR
-  A[Collectors<br>API 수집] --> B[Risk<br>위험도 계산]
+  A[Collectors<br>API 수집] --> B[각 지표 및 종합<br>위험도 계산]
   B --> C[Warehouse<br>Postgres/Parquet]
   C --> D[Visualization<br>Tableau / Kepler.gl]
   A -->|Airflow DAG| B
