@@ -158,7 +158,7 @@ services:
 
   airflow-worker:
     <<: *airflow-common
-    runtime : nvidia
+    # runtime : nvidia
     command: celery worker
     healthcheck:
       test:
@@ -171,15 +171,15 @@ services:
       <<: *airflow-common-env
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
-      NVIDIA_VISIBLE_DEVICES: all
+      # NVIDIA_VISIBLE_DEVICES: all
       DUMB_INIT_SETSID: "0"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-              driver: nvidia
-              count: all
+    # deploy:
+    #  resources:
+    #    reservations:
+    #      devices:
+    #        - capabilities: [gpu]
+    #          driver: nvidia
+    #          count: all
 
     restart: always
     depends_on:
