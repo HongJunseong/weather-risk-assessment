@@ -45,7 +45,7 @@
 - **출처**: 기상청 API
   - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
   - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
-- **처리**: API 호출 → pandas 전처리 → **`scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산** → `risk_latest.parquet` 생성
+- **처리**: API 호출 → pandas 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
 - **저장**: Parquet/CSV(로컬 검증) + **PostgreSQL**(시각화·자동화)
 
 ---
@@ -74,58 +74,69 @@
 - 행정구역 중심 좌표를 **간단 확인용 지도**로 표시
 - 필요 시 특정 시점/구간만 **보조적으로** 사용
 
-### 품질/운영 지표(예시로 문서화)
-- 데이터 최신성(freshness): 파이프라인 완료 기준 **≤ 30–40분** 내 반영  
-- DAG 안정성: 재시도 후 성공률, 실패 원인 로그(네트워크/스키마) 분류  
-- 데이터 품질: 중복 건수(UPSERT 전/후), 결측률, 시간 정렬 불일치 건수  
-- 대시보드 지연: DB 적재 완료 → Tableau 반영까지 평균 소요 시간
 
-### 🧪 운영/품질 지표 (KPI)
+### 운영/품질 지표 (KPI)
 실제 운영에서 **신뢰성·최신성**을 보장하기 위해 아래 지표들을 모니터링합니다.
 
-- **데이터 최신성(Freshness)**: `now() - max(fcst_time)` (목표: ≤ 30–40분)
-- **커버리지(Coverage)**: 최근 1시간 내 수집된 `admin_code` 개수 / 기대 지역 수
-- **결측률(Null Rate)**: 주요 지표(`r_total`, `uv_index`, `precip_mm` 등)의 null 비율
-- **증분 적재량(Load Volume)**: 30분 단위 신규/갱신 row 수
-- **대시보드 지연(Dashboard Latency)**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
-- **중복 차단(Dedup)**: PK/UPSERT 정책으로 **0** 유지(이상 징후 알림)
+- **데이터 최신성**: `now() - max(fcst_time)`
+- **커버리지**: 최신 `fcst_time` 의 (nx, ny) 수
+- **결측률**: 주요 지표`(r_total, rn1, wsd, t1h, reh, pty, sky, uvi)`의 NULL 비율
+- **증분 적재량**: 30분 단위 신규/갱신 row 수
+- **중복 차단**: (nx,ny,fcst_time) 중복 0 유지
+- **대시보드 지연**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
 
-<summary><b>SQL 예시 (바로 실행 가능)</b></summary>
+### SQL 예시
 
 ```sql
--- 1) Freshness (분)
-SELECT ROUND(EXTRACT(EPOCH FROM (NOW() - MAX(fcst_time)))/60.0, 1) AS freshness_min
-FROM risk_latest;
-
--- 2) 최근 1시간 커버리지(지역 수)
-SELECT COUNT(DISTINCT admin_code) AS regions_covered_last_1h
-FROM risk_latest
-WHERE fcst_time >= NOW() - INTERVAL '1 hour';
-
--- 3) 주요 지표 결측률
+-- A) 파이프라인 최신성(분) & 최신 예보 리드 타임(분)
 SELECT
-  ROUND(100.0 * SUM(CASE WHEN r_total IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS r_total_null_pct,
-  ROUND(100.0 * SUM(CASE WHEN uv_index IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS uv_null_pct,
-  ROUND(100.0 * SUM(CASE WHEN precip_mm IS NULL THEN 1 ELSE 0 END)/COUNT(*), 2) AS precip_null_pct
-FROM risk_latest
-WHERE fcst_time >= NOW() - INTERVAL '6 hours';
+  ROUND( (EXTRACT(EPOCH FROM (NOW() - MAX(source_run_at))) / 60.0)::numeric , 1) AS pipeline_latency_min,
+  ROUND( (EXTRACT(EPOCH FROM (MAX(fcst_time) - NOW()))          / 60.0)::numeric , 1) AS latest_fcst_lead_min
+FROM risk_history_wide;
 
--- 4) 30분 단위 적재량
-SELECT DATE_TRUNC('minute', fcst_time)::timestamp(0) AS slot,
-       COUNT(*) AS rows_in_slot
-FROM risk_latest
-WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY 1
-ORDER BY 1 DESC;
+-- B) 최신 fcst_time의 커버리지(그리드 수)와 로우 수
+WITH m AS (SELECT MAX(fcst_time) AS ft FROM risk_history_wide)
+SELECT
+  (SELECT COUNT(*) FROM risk_history_wide WHERE fcst_time = (SELECT ft FROM m)) AS rows_latest_step,
+  (SELECT COUNT(*) FROM (SELECT DISTINCT nx,ny FROM risk_history_wide
+                         WHERE fcst_time = (SELECT ft FROM m)) g) AS grids_latest_step;
 
--- 5) 최근 6시간 지역별 평균 위험도 (대시보드 타일용)
-SELECT admin_code,
+-- C) 최근 실행에 대한 주요 지표 결측률
+WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
+SELECT
+  ROUND(100.0 * AVG((r_total IS NULL)::int), 2) AS r_total_null_pct,
+  ROUND(100.0 * AVG((rn1     IS NULL)::int), 2) AS rn1_null_pct,
+  ROUND(100.0 * AVG((wsd     IS NULL)::int), 2) AS wsd_null_pct,
+  ROUND(100.0 * AVG((t1h     IS NULL)::int), 2) AS t1h_null_pct,
+  ROUND(100.0 * AVG((reh     IS NULL)::int), 2) AS reh_null_pct,
+  ROUND(100.0 * AVG((pty     IS NULL)::int), 2) AS pty_null_pct,
+  ROUND(100.0 * AVG((sky     IS NULL)::int), 2) AS sky_null_pct,
+  ROUND(100.0 * AVG((uvi     IS NULL)::int), 2) AS uvi_null_pct
+FROM risk_history_wide
+WHERE source_run_at = (SELECT sr FROM s);
+
+
+-- D) 최근 실행에서 UPSERT 된 총 행 수
+WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
+SELECT COUNT(*) AS rows_touched_in_last_run
+FROM risk_history_wide
+WHERE source_run_at = (SELECT sr FROM s);
+
+
+-- E) 최근 6 시간 지역별 평균 위험도
+SELECT admin_names,
        ROUND(AVG(r_total)::numeric, 3) AS avg_risk_6h
-FROM risk_latest
+FROM risk_history_wide
 WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY admin_code
+GROUP BY admin_names
 ORDER BY avg_risk_6h DESC
 LIMIT 20;
+
+-- F) 중복 점검(스냅샷 무시 모드에서 항상 0행이어야 정상)
+SELECT nx, ny, fcst_time, COUNT(*) AS dup_cnt
+FROM risk_history_wide
+GROUP BY 1,2,3
+HAVING COUNT(*) > 1;
 
 ```
 
@@ -144,6 +155,7 @@ LIMIT 20;
 | Tableau가 수동 새로고침 의존 | Tableau ↔ PostgreSQL **라이브 연결** 전환(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
 | 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
 | 로컬 검증과 운영 데이터 소스가 달라 재현성 저하 | **Parquet + DB 병행** 운영: Parquet(로컬 검증/백업), DB(운영/시각화) | 개발-운영 격차 축소, 빠른 로컬 디버깅 가능 |
+| Airflow 재실행 등으로 인한 DB 예보 누적/중복 | UNIQUE (nx,ny,fcst_time) + ON CONFLICT ... DO UPDATE(단, EXCLUDED.source_run_at >= 기존일 때만 갱신) 등 조건을 설정함 | 겹치는 단계는 업데이트, 새 단계만 INSERT → 30분 주기 증분화, 행 수 예측 가능 |
 
 > 시각화 전략: **Tableau 중심**(라이브 연결, 툴팁에 예측 시각·원천 지표 노출).  
 > kepler.gl은 공간 분포 확인이 필요할 때 **보조적으로** 사용.
@@ -165,39 +177,53 @@ LIMIT 20;
 - **데이터 관리/무결성**: PK·Index 기반으로 **중복 제어/품질 보장**
 - **업서트(UPSERT)**: 30분 주기 갱신 시 **중복 없이 최신화**
 - **SQL 탐색성**: 조건/집계/조인 기반 **즉시 분석**
-- **지리공간 확장(PostGIS)**: 태풍 경로/버퍼/폴리곤 교차 등 **공간 분석** 고도화
+- **지리공간 확장에 용이(PostGIS)**: 태풍 경로/버퍼/폴리곤 교차 등 **공간 분석** 고도화
 
 ### DDL 예시 (최소 스키마)
 
 ```sql
-CREATE TABLE IF NOT EXISTS risk_latest (
-  fcst_time      timestamptz NOT NULL,
-  admin_code     varchar(20) NOT NULL,
-  r_total        numeric,
-  uv_index       numeric,
-  ty_distance_km numeric,
-  precip_mm      numeric,
-  PRIMARY KEY (fcst_time, admin_code)
-);
+CREATE TABLE IF NOT EXISTS risk_history_wide (
+      id            BIGSERIAL PRIMARY KEY,
+      nx            INTEGER NOT NULL,
+      ny            INTEGER NOT NULL,
+      admin_names   TEXT,
+      base_date     DATE,
+      fcst_date     DATE,
+      fcst_time     TIMESTAMPTZ NOT NULL,
+      source_run_at TIMESTAMPTZ NOT NULL,
+      RN1           DOUBLE PRECISION,
+      WSD           DOUBLE PRECISION,
+      UUU           DOUBLE PRECISION,
+      VVV           DOUBLE PRECISION,
+      T1H           DOUBLE PRECISION,
+      REH           DOUBLE PRECISION,
+      PTY           DOUBLE PRECISION,
+      SKY           DOUBLE PRECISION,
+      UVI           DOUBLE PRECISION,
+      R_rain        DOUBLE PRECISION,
+      R_heat        DOUBLE PRECISION,
+      R_wind        DOUBLE PRECISION,
+      R_uv          DOUBLE PRECISION,
+      R_typhoon     DOUBLE PRECISION,
+      R_total       DOUBLE PRECISION,
+      UNIQUE (nx, ny, fcst_time, source_run_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_rhw_fcst ON risk_history_wide (fcst_time);
+    CREATE INDEX IF NOT EXISTS idx_rhw_grid_time ON risk_history_wide (nx, ny, fcst_time DESC);
 
-CREATE INDEX IF NOT EXISTS idx_risk_latest_time  ON risk_latest (fcst_time);
-CREATE INDEX IF NOT EXISTS idx_risk_latest_admin ON risk_latest (admin_code);
-
--- 공간데이터 확장 시:
--- CREATE EXTENSION IF NOT EXISTS postgis;
--- ALTER TABLE risk_latest ADD COLUMN geom geometry(Point, 4326);
 
 ```
 
 ### 분석 쿼리 예시
 
 ```sql
--- 최근 6시간 지역별 평균 위험도 Top-N
-SELECT admin_code, ROUND(AVG(r_total)::numeric, 3) AS avg_risk
-FROM risk_latest
-WHERE fcst_time >= NOW() - interval '6 hours'
-GROUP BY admin_code
-ORDER BY avg_risk DESC
-LIMIT 20;
+-- 특정 격자(nx,ny)의 시계열(최근 24시간)
+SELECT
+  fcst_time AT TIME ZONE 'Asia/Seoul' AS fcst_kst,
+  r_total, rn1, wsd, t1h, reh, pty, sky, uvi
+FROM risk_history_wide
+WHERE nx = 60 AND ny = 127
+  AND fcst_time >= NOW() - INTERVAL '24 hours'
+ORDER BY fcst_time;
 
 ```
