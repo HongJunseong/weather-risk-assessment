@@ -261,6 +261,7 @@ ORDER BY fcst_time;
 
 
 ---
+
 ## 실행 가이드
 ```bash
 
@@ -305,3 +306,4 @@ docker compose exec -e PGPASSWORD=dre_pass_123 postgres \
 ## 7) (선택) 권한 이슈 대비 폴더 생성/권한 (permission denied 발생 시 예시)
 chmod -R 775 ./logs ./weather_risk_assessment/data || true
 
+```
