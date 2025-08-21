@@ -208,7 +208,6 @@ HAVING COUNT(*) > 1;
 
 ```sql
 CREATE TABLE IF NOT EXISTS risk_history_wide (
-      id            BIGSERIAL PRIMARY KEY,
       nx            INTEGER NOT NULL,
       ny            INTEGER NOT NULL,
       admin_names   TEXT,
@@ -231,10 +230,9 @@ CREATE TABLE IF NOT EXISTS risk_history_wide (
       R_uv          DOUBLE PRECISION,
       R_typhoon     DOUBLE PRECISION,
       R_total       DOUBLE PRECISION,
-      UNIQUE (nx, ny, fcst_time, source_run_at)
+      CONSTRAINT pk_rhw PRIMARY KEY (nx, ny, fcst_time)
     );
     CREATE INDEX IF NOT EXISTS idx_rhw_fcst ON risk_history_wide (fcst_time);
-    CREATE INDEX IF NOT EXISTS idx_rhw_grid_time ON risk_history_wide (nx, ny, fcst_time DESC);
 
 
 ```
@@ -278,7 +276,7 @@ PGPORT=5432
 PGUSER=dre_user           # <- 원하는 username
 PGPASSWORD=dre_pass_123   # <- 원하는 password
 PGDATABASE=dre_db         # <- 원하는 DB명
-
+EOF
 
 ## 3) 컨테이너 기동 (postgres가 먼저 떠야 아래 exec 가능)
 docker compose up -d
