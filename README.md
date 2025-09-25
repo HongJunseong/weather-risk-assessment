@@ -87,7 +87,7 @@ flowchart LR
 ### Tableau dashboard
 - 지역별 **종합 위험도** 및 지표별 비교(UV, 강수, 풍속, 태풍 거리)
 - **툴팁**에 예측 시각/원천 지표 노출
-- **PostgreSQL 라이브 연결**로 Airflow 갱신 시 자동 반영
+- Airflow task에서 Hyper 파일을 생성 후 Tableau Cloud와 연동하여, 데이터가 갱신될 때마다 대시보드도 자동으로 최신 상태로 반영되도록 구성
 - 아래와 같이, 시간대 별로 위험도가 변화하는 모습을 확인할 수 있음
   
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
