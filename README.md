@@ -12,8 +12,9 @@
 ---
 
 ## 🗂 목차
-- [프로젝트 요약](#-프로젝트-요약)
+- [프로젝트 개요](#-프로젝트-개요)
 - [프로젝트 배경](#-프로젝트-배경)
+- [프로젝트 내용 요약](#-프로젝트-내용-요약)
 - [데이터 구성](#-데이터-구성)
 - [전체 시스템 구성](#-전체-시스템-구성)
 - [결과 및 시각화](#-결과-및-시각화)
@@ -21,12 +22,13 @@
 - [인프라 및 개발 환경](#-인프라-및-개발-환경)
 - [PostgreSQL 도입 의의](#-postgresql-도입-의의)
 - [향후 확장 아이디어](#-향후-확장-아이디어)
+- [실행 가이드](#-실행-가이드)
 
 ---
 
-## 📌 프로젝트 개요
+<h2>📌 프로젝트 개요</h2>
 기상 데이터를 실시간으로 수집·처리하여 태풍, UV 지수, 단기 예보 기반의 지역별 위험도를 산출하고, 이를 시각적으로 제공하는 재해 대응 시스템입니다.
-**Airflow 기반 데이터 파이프라인**과 **시각화 대시보드(Tableau, kepler.gl)** 를 활용하여 누구나 직관적으로 기상 위험도를 파악할 수 있도록 구현했습니다.
+Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepler.gl)를 활용하여 누구나 직관적으로 기상 위험도를 파악할 수 있도록 구현했습니다.
 
 ---
 
@@ -85,7 +87,7 @@ flowchart LR
 ### Tableau dashboard
 - 지역별 **종합 위험도** 및 지표별 비교(UV, 강수, 풍속, 태풍 거리)
 - **툴팁**에 예측 시각/원천 지표 노출
-- **PostgreSQL 라이브 연결**로 Airflow 갱신 시 자동 반영
+- Airflow task에서 Hyper 파일을 생성 후 Tableau Cloud와 연동하여, 데이터가 갱신될 때마다 대시보드도 자동으로 최신 상태로 반영되도록 구성
 - 아래와 같이, 시간대 별로 위험도가 변화하는 모습을 확인할 수 있음
   
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
@@ -208,7 +210,6 @@ HAVING COUNT(*) > 1;
 
 ```sql
 CREATE TABLE IF NOT EXISTS risk_history_wide (
-      id            BIGSERIAL PRIMARY KEY,
       nx            INTEGER NOT NULL,
       ny            INTEGER NOT NULL,
       admin_names   TEXT,
@@ -231,10 +232,9 @@ CREATE TABLE IF NOT EXISTS risk_history_wide (
       R_uv          DOUBLE PRECISION,
       R_typhoon     DOUBLE PRECISION,
       R_total       DOUBLE PRECISION,
-      UNIQUE (nx, ny, fcst_time, source_run_at)
+      CONSTRAINT pk_rhw PRIMARY KEY (nx, ny, fcst_time)
     );
     CREATE INDEX IF NOT EXISTS idx_rhw_fcst ON risk_history_wide (fcst_time);
-    CREATE INDEX IF NOT EXISTS idx_rhw_grid_time ON risk_history_wide (nx, ny, fcst_time DESC);
 
 
 ```
@@ -259,3 +259,52 @@ ORDER BY fcst_time;
 - **PostGIS 공간 분석 적용**: 태풍 경로와 행정구역 교차 연산으로 직접 피해 예측
 - **알림 시스템**: 특정 위험도 임계값 초과 시 Slack/이메일 자동 알림
 - **클라우드 배포**: AWS/GCP 상에서 서버리스 형태로 실행
+
+
+---
+
+## 📝 실행 가이드
+```bash
+
+## 1) 리포지토리 루트에서 docker-compose.yaml 있는 폴더로
+cd ./airflow
+
+## 2) .env 생성 (Airflow 권장 UID/GID + 프로젝트 DB 연결 정보)
+echo "AIRFLOW_UID=$(id -u)" > .env
+echo "AIRFLOW_GID=$(id -g)" >> .env
+cat >> .env <<'EOF'
+# --- Project DB (Risk History) ---
+PGHOST=postgres
+PGPORT=5432
+PGUSER=dre_user           # <- 원하는 username
+PGPASSWORD=dre_pass_123   # <- 원하는 password
+PGDATABASE=dre_db         # <- 원하는 DB명
+EOF
+
+## 3) 컨테이너 기동 (postgres가 먼저 떠야 아래 exec 가능)
+docker compose up -d
+
+## 4) DB USER 생성(존재하지 않을 때만)
+docker compose exec -e PGPASSWORD=airflow postgres \
+  psql -U airflow -d airflow -c "DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dre_user') THEN
+      CREATE ROLE dre_user WITH LOGIN PASSWORD 'dre_pass_123';
+    END IF;
+  END \$\$;"
+
+## 5) DB 생성(존재하지 않을 때만)
+docker compose exec -T -e PGPASSWORD=airflow postgres \
+  bash -lc 'psql -U airflow -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='\''dre_db'\''" | grep -q 1 || \
+            psql -U airflow -d postgres -c "CREATE DATABASE dre_db OWNER dre_user;"'
+
+## 6) 생성 확인 & 접속 테스트
+docker compose exec -e PGPASSWORD=airflow postgres \
+  psql -U airflow -d postgres -c "\l dre_db"
+
+docker compose exec -e PGPASSWORD=dre_pass_123 postgres \
+  psql -U dre_user -d dre_db -c "SELECT now();"
+
+## 7) (선택) 권한 이슈 대비 폴더 생성/권한 (permission denied 발생 시 예시)
+chmod -R 775 ./logs ./weather_risk_assessment/data || true
+
+```
