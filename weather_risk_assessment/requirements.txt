@@ -14,3 +14,6 @@ tableauhyperapi>=0.0.201
 SQLAlchemy<2.0
 psycopg2-binary
 pendulum
+kafka-python
+pyspark==3.5.1
+boto3
