@@ -15,7 +15,7 @@
 ---
 
 ## 목차
-- [프로젝트 개요](#-프로젝트개요)
+- [프로젝트 개요](#-프로젝트-개요)
 - [프로젝트 배경](#-프로젝트-배경)
 - [프로젝트 내용 요약](#-프로젝트-내용-요약)
 - [데이터 구성](#-데이터-구성)
@@ -40,7 +40,7 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 
 기상청(KMA)은 초단기/단기예보, 생활기상지수(UV), 태풍 정보 등 다양한 지표를 공개하지만, 각 지표는 포맷과 단위가 제각각이고 시간축도 다르게 제공됩니다. 결과적으로 **지표를 종합해 한눈에 비교 가능한 ‘지역별 위험도’로 해석**하기 어렵고, 실무자는 매번 데이터를 풀어서 읽고 조합해야 하는 부담을 겪습니다.
 
-또한 많은 대시보드가 수동 갱신에 의존하거나 특정 지표만 보여 주어, **최신성 확보와 종합 판단**에 한계가 있습니다. 본 프로젝트는 이러한 간극을 해소하기 위해, **30분 주기 데이터 수집 → 지표별 위험도 계산 → 지역별 종합 위험도 산출 → 시각화**로 이어지는 흐름을 통해 **즉시 활용 가능한 형태의 위험도 정보를 제공**하는 것을 목표로 합니다. 이는 예측 모델링이 아니라 **평가/산출/모니터링**에 초점을 맞춘 접근으로, 재해 대응의 현장성과 실용성을 강화합니다.
+또한 많은 대시보드가 수동 갱신에 의존하거나 특정 지표만 보여 주어, **최신성 확보와 종합 판단**에 한계가 있습니다. 본 프로젝트는 이러한 간극을 해소하기 위해, **1시간 주기 데이터 수집 → 지표별 위험도 계산 → 지역별 종합 위험도 산출 → 시각화**로 이어지는 흐름을 통해 **즉시 활용 가능한 형태의 위험도 정보를 제공**하는 것을 목표로 합니다. 이는 예측 모델링이 아니라 **평가/산출/모니터링**에 초점을 맞춘 접근으로, 재해 대응의 현장성과 실용성을 강화합니다.
 
 ---
 
@@ -49,9 +49,9 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 - **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고 전처리하도록 자동화  
 - **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선 등 지표별 위험도 계산 함수를 개발하고, 가중합을 통해 종합 위험도(`r_total`) 산출  
 - **데이터 저장소 관리**: Parquet(로컬 검증) + PostgreSQL(운영/분석) 이중 구조로 운영, UPSERT 기반 중복 없는 증분 적재 구현
-- **Kafka Streaming**: Airflow에서 API 수집·위험도 산출을 수행한 뒤, 최신 스냅샷(`risk_latest`)을 Kafka 토픽에 JSON 이벤트로 발행해 스트리밍 파이프라인의 입력으로 사용
-- **Spark Streaming / Consumer**: Spark 가 Kafka risk_latest 토픽을 구독하여 이벤트를 읽고, 스키마를 적용·필요한 컬럼만 선택한 뒤 S3에 Parquet 형식으로 적재
-- **S3 Data Lake 구축**: Spark가, 적재한 risk_latest 이벤트를 Parquet으로 S3에 쌓아, 이후 배치 분석·백필·추가 파이프라인에서 재사용 가능한 데이터 레이크로 운영
+- **Kafka Streaming**: Airflow에서 API 수집·위험도 산출을 수행한 뒤, 최신 스냅샷(`risk_latest`)을 **Kafka 토픽(`risk_latest`)에 JSON 이벤트로 발행**해 스트리밍 파이프라인의 입력으로 사용
+- **Spark Streaming / Consumer**: Spark가 Kafka `risk_latest` 토픽을 구독하여 이벤트를 읽고, 스키마를 적용·필요한 컬럼만 선택한 뒤 **S3에 Parquet 형식으로 적재**
+- **S3 Data Lake 구축**: Spark가 Kafka에서 읽어온 `risk_latest` 이벤트를 Parquet으로 S3에 쌓아, 이후 배치 분석·백필·추가 파이프라인에서 재사용 가능한 **데이터 레이크**로 운영
 - **시각화 자동화**: Airflow task에서 **Hyper 파일을 생성해 Tableau Cloud와 연동**, 데이터 갱신 시 대시보드가 자동으로 최신화되도록 구성  
 - **지표 품질 관리**: 데이터 최신성, 결측률, 중복률 등 KPI를 정의하고 SQL 모니터링 쿼리를 작성하여 운영 품질 확보
 
@@ -63,23 +63,26 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
   - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
   - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
 - **처리**: API 호출 → pandas 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
-- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **PostgreSQL**(적재)
+- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **PostgreSQL**(운영/대시보드) + **AWS S3(Data Lake, Spark 분석용)**
 
 ---
 
 ## 전체 시스템 구성
-<img width="350" height="520" alt="disrisk structure" src="https://github.com/user-attachments/assets/eba12d59-d31e-4637-9e71-0ac13a97d825" />
+<img width="600" height="750" alt="image" src="https://github.com/user-attachments/assets/ba133e47-00c3-4297-a623-66b02c2e97f0" />
+
 
 
 ```mermaid
 flowchart LR
-  A[Collectors<br>API 수집] --> B[각 지표 및 종합<br>위험도 계산]
-  B --> C[Warehouse<br>Postgres/Parquet]
-  C --> D[Visualization<br>Tableau / Kepler.gl]
-  A -->|Airflow DAG| B
+  A["Collectors<br>API 수집"] --> B["각 지표 및 종합<br>위험도 계산 (Airflow DAG)"]
+  B --> C["Warehouse<br>Postgres/Parquet"]
+  B --> K["Kafka<br>risk_latest 토픽"]
+  K --> S["Spark Streaming<br>Consumer"]
+  S --> L["AWS S3<br>Data Lake (Parquet)"]
+  C --> V["Visualization<br>Tableau / Kepler.gl"]
 ```
 
-(모든 단계는 Airflow DAG로 30분 주기 자동 실행)
+(수집·위험도 산출 DAG는 1시간 주기, Streaming DAG는 동일 주기로 자동 실행)
 
 
 - **Airflow DAG**: 주기 실행 · 오류 로그 · 자동 재시도(백오프)
@@ -103,91 +106,7 @@ flowchart LR
 - 필요 시 특정 시점/구간만 **보조적으로** 사용
 - 아래와 같이, 현재 시각을 기준으로 한 전국 위험도를 파악할 수 있음
 
-<img width="520" height="500" alt="kepler gl (1)" src="https://github.com/user-attachments/assets/632f96c4-10d7-4db5-99b8-bdec51826492" />
-
-
-
-### 운영/품질 지표 (KPI)
-실제 운영에서 **신뢰성·최신성**을 보장하기 위해 아래 지표들을 모니터링합니다.
-
-- **데이터 최신성**: `now() - max(fcst_time)`
-- **커버리지**: 최신 `fcst_time` 의 (nx, ny) 수
-- **결측률**: 주요 지표`(r_total, rn1, wsd, t1h, reh, pty, sky, uvi)`의 NULL 비율
-- **증분 적재량**: 30분 단위 신규/갱신 row 수
-- **중복 차단**: (nx,ny,fcst_time) 중복 0 유지
-- **대시보드 지연**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
-
-### SQL 예시
-
-```sql
--- A) 파이프라인 최신성(분) & 최신 예보 리드 타임(분)
-SELECT
-  ROUND( (EXTRACT(EPOCH FROM (NOW() - MAX(source_run_at))) / 60.0)::numeric , 1) AS pipeline_latency_min,
-  ROUND( (EXTRACT(EPOCH FROM (MAX(fcst_time) - NOW()))          / 60.0)::numeric , 1) AS latest_fcst_lead_min
-FROM risk_history_wide;
-
--- B) 최신 fcst_time의 커버리지(그리드 수)와 로우 수
-WITH m AS (SELECT MAX(fcst_time) AS ft FROM risk_history_wide)
-SELECT
-  (SELECT COUNT(*) FROM risk_history_wide WHERE fcst_time = (SELECT ft FROM m)) AS rows_latest_step,
-  (SELECT COUNT(*) FROM (SELECT DISTINCT nx,ny FROM risk_history_wide
-                         WHERE fcst_time = (SELECT ft FROM m)) g) AS grids_latest_step;
-
--- C) 최근 실행에 대한 주요 지표 결측률
-WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
-SELECT
-  ROUND(100.0 * AVG((r_total IS NULL)::int), 2) AS r_total_null_pct,
-  ROUND(100.0 * AVG((rn1     IS NULL)::int), 2) AS rn1_null_pct,
-  ROUND(100.0 * AVG((wsd     IS NULL)::int), 2) AS wsd_null_pct,
-  ROUND(100.0 * AVG((t1h     IS NULL)::int), 2) AS t1h_null_pct,
-  ROUND(100.0 * AVG((reh     IS NULL)::int), 2) AS reh_null_pct,
-  ROUND(100.0 * AVG((pty     IS NULL)::int), 2) AS pty_null_pct,
-  ROUND(100.0 * AVG((sky     IS NULL)::int), 2) AS sky_null_pct,
-  ROUND(100.0 * AVG((uvi     IS NULL)::int), 2) AS uvi_null_pct
-FROM risk_history_wide
-WHERE source_run_at = (SELECT sr FROM s);
-
-
--- D) 최근 실행에서 UPSERT 된 총 행 수
-WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
-SELECT COUNT(*) AS rows_touched_in_last_run
-FROM risk_history_wide
-WHERE source_run_at = (SELECT sr FROM s);
-
-
--- E) 최근 6 시간 지역별 평균 위험도
-SELECT admin_names,
-       ROUND(AVG(r_total)::numeric, 3) AS avg_risk_6h
-FROM risk_history_wide
-WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY admin_names
-ORDER BY avg_risk_6h DESC
-LIMIT 20;
-
--- F) 중복 점검(스냅샷 무시 모드에서 항상 0행이어야 정상)
-SELECT nx, ny, fcst_time, COUNT(*) AS dup_cnt
-FROM risk_history_wide
-GROUP BY 1,2,3
-HAVING COUNT(*) > 1;
-
-```
-
-
----
-
-## 기술적 도전 과제
-
-| 문제(실제 이슈) | 내가 취한 접근 | 결과/효과 |
-|---|---|---|
-| API가 XML/JSON 등 서로 다른 포맷 + 필드 네이밍 상이 | 공통 파서(pandas 기반)와 스키마 표준화 계층을 만들고, 변환 규칙을 유닛 테스트로 고정 | 수집/전처리 코드 단순화, 스키마 일관성 확보로 후속 파이프라인 안정화 |
-| 초단기/단기/UV 기준시각 불일치로 시간축( `fcstTime` ) 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정(최근 유효값 채택) | 시간 정렬 버그 제거, 대시보드 시점 혼선 해소 |
-| 행정구역 좌표(Nx, Ny) 중복/충돌로 조인 불안정 | `admin_list.csv` 정제 + **중심점 중복 제거 함수**로 `admin_code`-좌표 매핑 고정 | 조인 키 일관성 확보, 지역별 집계의 신뢰도 향상 |
-| 파일만 사용할 때 중복/버전 관리 어려움 | **PostgreSQL 도입** + PK/인덱스 설계, **UPSERT**로 증분 갱신 | 30분 주기 갱신 시 중복 없이 최신 상태 유지, 쿼리 탐색성 개선 |
-| Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃·리트라이 설정 | 간헐적 API 장애에도 파이프라인 복원력↑ |
-| Tableau가 수동 새로고침 의존 | Tableau ↔ PostgreSQL **라이브 연결** 전환(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
-| 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
-| 로컬 검증과 운영 데이터 소스가 달라 재현성 저하 | **Parquet + DB 병행** 운영: Parquet(로컬 검증/백업), DB(운영/시각화) | 개발-운영 격차 축소, 빠른 로컬 디버깅 가능 |
-| Airflow 재실행 등으로 인한 DB 예보 누적/중복 | UNIQUE (nx,ny,fcst_time) + ON CONFLICT ... DO UPDATE(단, EXCLUDED.source_run_at >= 기존일 때만 갱신) 등 조건을 설정함 | 겹치는 단계는 업데이트, 새 단계만 INSERT → 30분 주기 증분화, 행 수 예측 가능 |
+<img width="520" height="500" alt="kepler gl (1)" src="https://github.com/user-at간 주기 증분화, 행 수 예측 가능 |
 | streaming dag 재실행 시 이벤트 중복 발생 | Kafka Payload 해시 생성 | 중복 데이터 스트리밍 차단 |
 
 > 시각화 전략: **Tableau 중심**(라이브 연결, 툴팁에 예측 시각·원천 지표 노출).  
