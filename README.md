@@ -304,7 +304,4 @@ docker compose exec -e PGPASSWORD=airflow postgres \
 docker compose exec -e PGPASSWORD=dre_pass_123 postgres \
   psql -U dre_user -d dre_db -c "SELECT now();"
 
-## 7) (선택) 권한 이슈 대비 폴더 생성/권한 (permission denied 발생 시 예시)
-chmod -R 775 ./logs ./weather_risk_assessment/data || true
-
 ```
