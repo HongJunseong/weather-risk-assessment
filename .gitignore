@@ -46,3 +46,5 @@ weather_risk_assessment/streaming/
 .DS_Store
 Thumbs.db
 
+# .sh files 
+*.sh
