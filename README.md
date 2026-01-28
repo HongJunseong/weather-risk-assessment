@@ -3,34 +3,21 @@
 
 ![python](https://img.shields.io/badge/Python-3.11-blue)
 ![airflow](https://img.shields.io/badge/Apache%20Airflow-2.7.3-017CEE)
-![kafka](https://img.shields.io/badge/Apache%20Kafka-Streaming-231F20)
+![kafka](https://img.shields.io/badge/Apache%20Kafka-Event/Messaging-231F20)
 ![spark](https://img.shields.io/badge/Apache%20spark-3.5.1-red)
 ![aws s3](https://img.shields.io/badge/AWS-S3-FF9900)
 ![postgresql](https://img.shields.io/badge/PostgreSQL-13-336791)
 ![tableau](https://img.shields.io/badge/Tableau-Visualization-orange)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
-> **요약**: Airflow pipeline으로 기상청 API를 1시간 단위로 수집해 **준실시간(near real-time)** 으로 위험도를 **평가/산출**하고, 이를 **Tableau**와 **kepler.gl**로 시각화합니다. 또한 Parquet + PostgreSQL 기반의 로컬 검증 구조를 유지하면서, **AWS S3 data lake**, **Spark 분석 파이프라인**, **Kafka 스트리밍**까지 확장하여 대규모 분석, 실시간 소비까지 지원하도록 설계했습니다.
+> **요약**: Airflow pipeline으로 기상청 API를 1시간 단위로 수집해 **준실시간(near real-time)** 으로 위험도를 **평가/산출**하고, 이를 **Tableau**와 **kepler.gl**로 시각화할 수 있도록 하였습니다. 또한, 산출 결과는 **AWS S3** 상의 **Delta Lake*에 Medallion Architecture 구조로 누적되어, 재처리와 단계별 분석이 가능하도록 설계되었습니다. 각 단계의 데이터는 Spark 기반 처리 로직을 통해 정제·집계되며, 지속적인 스트리밍 대신 **위험 발생 시 반응하는 이벤트 중심 구조**를 지향하여 운영 복잡도를 최소화했습니다.
 
----
-
-## 목차
-- [프로젝트 개요](#프로젝트-개요)
-- [프로젝트 배경](#프로젝트-배경)
-- [프로젝트 내용 요약](#프로젝트-내용-요약)
-- [데이터 구성](#데이터-구성)
-- [전체 시스템 구성](#전체-시스템-구성)
-- [결과 및 시각화](#결과-및-시각화)
-- [기술적 도전 과제](#기술적-도전-과제)
-- [인프라 및 개발 환경](#인프라-및-개발-환경)
-- [향후 확장 아이디어](#향후-확장-아이디어)
-- [기본 실행 가이드](#기본-실행-가이드)
 
 ---
 
 <h2>프로젝트 개요</h2>
 기상 데이터를 실시간으로 수집·처리하여 태풍, UV 지수, 단기 예보 기반의 지역별 위험도를 산출하고, 이를 시각적으로 제공하는 재해 대응 시스템입니다.
-Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepler.gl)를 활용하여 누구나 직관적으로 기상 위험도를 파악할 수 있도록 구현했습니다.
+Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepler.gl)를 활용하여 보다 직관적으로 기상 위험도를 파악할 수 있도록 구현했습니다.
 
 ---
 
@@ -46,14 +33,12 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 
 ## 프로젝트 내용 요약
 
-- **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고 전처리하도록 자동화  
-- **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선 등 지표별 위험도 계산 함수를 개발하고, 가중합을 통해 종합 위험도(`r_total`) 산출  
-- **데이터 저장소 관리**: Parquet(로컬 검증) + PostgreSQL(운영/분석) 이중 구조로 운영, UPSERT 기반 중복 없는 증분 적재 구현
-- **Kafka Streaming**: Airflow에서 API 수집·위험도 산출을 수행한 뒤, 최신 스냅샷(`risk_latest`)을 **Kafka 토픽(`risk_latest`)에 JSON 이벤트로 발행**해 스트리밍 파이프라인의 입력으로 사용
-- **Spark Streaming / Consumer**: Spark가 Kafka `risk_latest` 토픽을 구독하여 이벤트를 읽고, 스키마를 적용·필요한 컬럼만 선택한 뒤 **S3에 Parquet 형식으로 적재**
-- **S3 Data Lake 구축**: Spark가 Kafka에서 읽어온 `risk_latest` 이벤트를 Parquet으로 S3에 쌓아, 이후 배치 분석·백필·추가 파이프라인에서 재사용 가능한 **데이터 레이크**로 운영
-- **시각화 자동화**: Airflow task에서 **Hyper 파일을 생성해 Tableau Cloud와 연동**, 데이터 갱신 시 대시보드가 자동으로 최신화되도록 구성  
-- **지표 품질 관리**: 데이터 최신성, 결측률, 중복률 등 KPI를 정의하고 SQL 모니터링 쿼리를 작성하여 운영 품질 확보
+- **데이터 파이프라인 구축** : Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고, 원천 데이터를 표준 스키마로 정제  
+- **위험도 산출 로직 구현** : 강수, 폭염, 태풍, 자외선 등 지표별 위험도 계산 함수를 개발하고, 가중합을 통해 종합 위험도(`r_total`) 산출  
+- **데이터 저장소** : 수집 데이터는 AWS S3 상의 Delta Lake에 Bronze–Silver–Gold 단계로 누적 저장하여, 원천 보존·정제·집계 흐름을 명확히 분리
+- **Spark 기반 데이터 처리** : Silver/Gold 단계 변환 및 집계 로직을 Spark로 처리해, 데이터 규모 증가 시에도 재처리(backfill)와 확장 분석이 가능하도록 설계
+- **시각화 연계** : 산출된 위험도 결과를 기반으로 Tableau 및 kepler.gl에서 지역별·시간대별 위험도 변화를 직관적으로 확인 가능
+- **품질 및 신뢰성 고려** : 시간 정렬(KST 기준), 결측치 처리, 중복 방지 로직을 통해 위험도 산출 결과의 일관성과 신뢰성을 유지
 
 
 ---
@@ -62,8 +47,8 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 - **출처**: 기상청 API
   - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
   - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
-- **처리**: API 호출 → pandas 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
-- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **PostgreSQL**(운영/대시보드) + **AWS S3(Data Lake, Spark 분석용)**
+- **처리**: API 호출 → 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
+- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **AWS S3(Delta Lake, Spark 분석용)**
 
 ---
 
@@ -71,15 +56,15 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 <img width="600" height="750" alt="image" src="https://github.com/user-attachments/assets/ba133e47-00c3-4297-a623-66b02c2e97f0" />
 
 
-
 ```mermaid
 flowchart LR
-  A["Collectors<br>API 수집"] --> B["각 지표 및 종합<br>위험도 계산 (Airflow)"]
-  B --> C["Warehouse<br>Postgres/Parquet"]
-  B --> K["Kafka<br>risk_latest 토픽"]
-  K --> S["Spark Streaming<br>Consumer"]
-  S --> L["AWS S3<br>Data Lake (Parquet)"]
-  C --> V["Visualization<br>Tableau / Kepler.gl"]
+  A["KMA API<br>1시간 주기 수집"] --> B["Airflow<br>Orchestration"]
+  B --> C["Bronze<br>S3 Delta Lake<br>(Raw)"]
+  C --> D["Spark Transform"]
+  D --> E["Silver<br>S3 Delta Lake<br>(Standardized)"]
+  E --> F["Spark Aggregate"]
+  F --> G["Gold<br>S3 Delta Lake<br>(Risk Metrics)"]
+  G --> V["Visualization<br>Tableau / kepler.gl"]
 ```
 
 (수집·위험도 산출 DAG는 1시간 주기, Streaming DAG는 동일 주기로 자동 실행)
@@ -96,6 +81,7 @@ flowchart LR
 - 지역별 **종합 위험도** 및 지표별 비교(UV, 강수, 풍속, 태풍 거리)
 - **툴팁**에 예측 시각/원천 지표 노출
 - Airflow task에서 Hyper 파일을 생성 후 Tableau Cloud와 연동하여, 데이터가 갱신될 때마다 대시보드도 자동으로 최신 상태로 반영되도록 구성
+  > 현재 자동 최신화 기능은 임시로 제외하였습니다.
 - 아래와 같이, 시간대 별로 위험도가 변화하는 모습을 확인할 수 있음
 
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
@@ -110,15 +96,15 @@ flowchart LR
 
 
 
-### 운영/품질 지표 (KPI)
-실제 운영에서 **신뢰성·최신성**을 보장하기 위해 아래 지표들을 모니터링합니다.
+### 품질 검증 지표
+위험도 산출 파이프라인의 **신뢰성과 재현성**을 확인하기 위해,  
+아래 지표들을 기준으로 **데이터 품질을 점검·검증**했습니다.
 
 - **데이터 최신성**: `now() - max(fcst_time)`
 - **커버리지**: 최신 `fcst_time` 의 (nx, ny) 수
 - **결측률**: 주요 지표`(r_total, rn1, wsd, t1h, reh, pty, sky, uvi)`의 NULL 비율
 - **증분 적재량**: 1시간 단위 신규/갱신 row 수
 - **중복 차단**: (nx,ny,fcst_time) 중복 0 유지
-- **대시보드 지연**: DB 적재 시각 ↔ Tableau 반영 시각 간 차이
 
 ### SQL 예시
 
@@ -182,10 +168,9 @@ HAVING COUNT(*) > 1;
 
 | 문제(실제 이슈) | 내가 취한 접근 | 결과/효과 |
 |---|---|---|
-| API가 XML/JSON 등 서로 다른 포맷 + 필드 네이밍 상이 | 공통 파서(pandas 기반)와 스키마 표준화 계층을 만들고, 변환 규칙을 유닛 테스트로 고정 | 수집/전처리 코드 단순화, 스키마 일관성 확보로 후속 파이프라인 안정화 |
+| API가 XML/JSON 등 서로 다른 포맷 + 필드 네이밍 상이 | 공통 파서와 스키마 표준화 계층을 만들고, 변환 규칙을 유닛 테스트로 고정 | 수집/전처리 코드 단순화, 스키마 일관성 확보로 후속 파이프라인 안정화 |
 | 초단기/단기/UV 기준시각 불일치로 시간축( `fcstTime` ) 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정(최근 유효값 채택) | 시간 정렬 버그 제거, 대시보드 시점 혼선 해소 |
 | 행정구역 좌표(Nx, Ny) 중복/충돌로 조인 불안정 | `admin_list.csv` 정제 + **중심점 중복 제거 함수**로 `admin_code`-좌표 매핑 고정 | 조인 키 일관성 확보, 지역별 집계의 신뢰도 향상 |
-| 파일만 사용할 때 중복/버전 관리 어려움 | **PostgreSQL 도입** + PK/인덱스 설계, **UPSERT**로 증분 갱신 | 1시간 주기 갱신 시 중복 없이 최신 상태 유지, 쿼리 탐색성 개선 |
 | Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃·리트라이 설정 | 간헐적 API 장애에도 파이프라인 복원력↑ |
 | Tableau가 수동 새로고침 의존 | Tableau ↔ PostgreSQL **라이브 연결** 전환(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
 | 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
@@ -201,8 +186,8 @@ HAVING COUNT(*) > 1;
 ## 인프라 및 개발 환경
 - **Python version**: Python 3.11
 - **Workflow**: Apache Airflow 2.7.3 (Docker Compose)
-- **Storage**: Parquet/CSV + **PostgreSQL 13** + AWS S3(Data Lake)
-- **Streaming**: Kafka
+- **Storage**: Parquet/CSV + AWS S3(Delta Lake)
+- **Event/Messaging**: Kafka
 - **Processing**: pandas + Spark(Pyspark)
 - **Visualization**: **Tableau Public**, **kepler.gl**
 - **Infrastructure**: Docker Compose + AWS S3
@@ -266,42 +251,37 @@ ORDER BY fcst_time;
 ## 기본 실행 가이드
 ```bash
 
-## 1) 리포지토리 루트에서 docker-compose.yaml 있는 폴더로
-cd ./airflow
+## 0) repository clone
+git clone <YOUR_REPO_URL>
+cd weather-risk-assessment
 
-## 2) .env 생성 (Airflow 권장 UID/GID + 프로젝트 DB 연결 정보)
+## 1) Airflow 실행 (docker-compose.yaml 있는 폴더로)
+cd airflow
+
+## 2) .env 생성 (Airflow 권장 UID/GID + AWS/S3 + KMA API Key)
 echo "AIRFLOW_UID=$(id -u)" > .env
 echo "AIRFLOW_GID=$(id -g)" >> .env
+
 cat >> .env <<'EOF'
-# --- Project DB (Risk History) ---
-PGHOST=postgres
-PGPORT=5432
-PGUSER=dre_user           # <- 원하는 username
-PGPASSWORD=dre_pass_123   # <- 원하는 password
-PGDATABASE=dre_db         # <- 원하는 DB명
+# --- Timezone ---
+TZ=Asia/Seoul
+
+# --- KMA API KEY ---
+KMA_API_KEY=YOUR_KMA_API_KEY
+
+# --- AWS / S3 (Delta Lake Storage) ---
+AWS_REGION=ap-northeast-2
+AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
+
+# Bronze/Silver/Gold Delta paths (S3)
+BRONZE_ULTRA_SHORTFCST=s3a://{YOUR_S3_BUCKET_PATH}
+SILVER_KMA_WIDE=s3a://{YOUR_S3_BUCKET_PATH}
+GOLD_RISK_METRICS=s3a://{YOUR_S3_BUCKET_PATH}
 EOF
 
-## 3) 컨테이너 기동 (postgres가 먼저 떠야 아래 exec 가능)
+## 3) 컨테이너 기동
 docker compose up -d
 
-## 4) DB USER 생성(존재하지 않을 때만)
-docker compose exec -e PGPASSWORD=airflow postgres \
-  psql -U airflow -d airflow -c "DO \$\$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='dre_user') THEN
-      CREATE ROLE dre_user WITH LOGIN PASSWORD 'dre_pass_123';
-    END IF;
-  END \$\$;"
-
-## 5) DB 생성(존재하지 않을 때만)
-docker compose exec -T -e PGPASSWORD=airflow postgres \
-  bash -lc 'psql -U airflow -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='\''dre_db'\''" | grep -q 1 || \
-            psql -U airflow -d postgres -c "CREATE DATABASE dre_db OWNER dre_user;"'
-
-## 6) 생성 확인 & 접속 테스트
-docker compose exec -e PGPASSWORD=airflow postgres \
-  psql -U airflow -d postgres -c "\l dre_db"
-
-docker compose exec -e PGPASSWORD=dre_pass_123 postgres \
-  psql -U dre_user -d dre_db -c "SELECT now();"
 
 ```
