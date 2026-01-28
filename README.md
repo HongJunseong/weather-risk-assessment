@@ -6,7 +6,6 @@
 ![kafka](https://img.shields.io/badge/Apache%20Kafka-Event/Messaging-231F20)
 ![spark](https://img.shields.io/badge/Apache%20spark-3.5.1-red)
 ![aws s3](https://img.shields.io/badge/AWS-S3-FF9900)
-![postgresql](https://img.shields.io/badge/PostgreSQL-13-336791)
 ![tableau](https://img.shields.io/badge/Tableau-Visualization-orange)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
@@ -53,8 +52,7 @@ Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepl
 ---
 
 ## 전체 시스템 구성
-<img width="600" height="750" alt="image" src="https://github.com/user-attachments/assets/ba133e47-00c3-4297-a623-66b02c2e97f0" />
-
+<img width="600" height="750" alt="image" src="https://github.com/user-attachments/assets/bfb0d682-7fa1-4a84-a90e-ad838eca8c31" />
 
 ```mermaid
 flowchart LR
@@ -172,7 +170,7 @@ HAVING COUNT(*) > 1;
 | 초단기/단기/UV 기준시각 불일치로 시간축( `fcstTime` ) 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정(최근 유효값 채택) | 시간 정렬 버그 제거, 대시보드 시점 혼선 해소 |
 | 행정구역 좌표(Nx, Ny) 중복/충돌로 조인 불안정 | `admin_list.csv` 정제 + **중심점 중복 제거 함수**로 `admin_code`-좌표 매핑 고정 | 조인 키 일관성 확보, 지역별 집계의 신뢰도 향상 |
 | Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃·리트라이 설정 | 간헐적 API 장애에도 파이프라인 복원력↑ |
-| Tableau가 수동 새로고침 의존 | Tableau ↔ PostgreSQL **라이브 연결** 전환(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
+| Tableau가 수동 새로고침 의존 | Hyper 파일을 생성하여 Tableau와 연결(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
 | 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
 | 로컬 검증과 운영 데이터 소스가 달라 재현성 저하 | **Parquet + DB 병행** 운영: Parquet(로컬 검증/백업), DB(운영/시각화) | 개발-운영 격차 축소, 빠른 로컬 디버깅 가능 |
 | Airflow 재실행 등으로 인한 DB 예보 누적/중복 | UNIQUE (nx,ny,fcst_time) + ON CONFLICT ... DO UPDATE(단, EXCLUDED.source_run_at >= 기존일 때만 갱신) 등 조건을 설정함 | 겹치는 단계는 업데이트, 새 단계만 INSERT → 1시간 주기 증분화, 행 수 예측 가능 |
