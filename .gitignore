@@ -29,6 +29,10 @@ weather_risk_assessment/data/*.parquet
 weather_risk_assessment/data/*.csv
 weather_risk_assessment/data/*.geojson
 
+# code
+weather_risk_assessment/streaming/
+
+# GIS files
 *.dbf
 *.shp
 *.prj
@@ -41,3 +45,4 @@ weather_risk_assessment/data/*.geojson
 .idea/
 .DS_Store
 Thumbs.db
+

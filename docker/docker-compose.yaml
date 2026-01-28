@@ -48,7 +48,6 @@ x-airflow-common:
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
   # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.5.1}
   build:
-    context: ./weather_risk_assessment
     dockerfile: Dockerfile
   environment:
     &airflow-common-env
@@ -67,12 +66,10 @@ x-airflow-common:
 
     AIRFLOW__WEBSERVER__SECRET_KEY: my_super_secret_key
 
+    PYTHONPATH: /opt/airflow/src
+
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
-  volumes:
-    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
-    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
-    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-  user: "${AIRFLOW_UID:-50000}:0"
+  user: "1000:0"
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -152,14 +149,10 @@ services:
       airflow-init:
         condition: service_completed_successfully
     volumes:
-      - ./:/opt/airflow
-      - ./data:/opt/airflow/data
-      - ./dags:/opt/airflow/dags
-      - ./models:/opt/airflow/models
-      - ./preds:/opt/airflow/preds
-      - ./weather_risk_assessment:/opt/airflow/weather_risk_assessment
+      - ../dags:/opt/airflow/dags
+      - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
     env_file:
-      - .env
+      - ../.env
 
   airflow-scheduler:
     <<: *airflow-common
@@ -180,15 +173,10 @@ services:
         condition: service_completed_successfully
 
     volumes:
-      - ./:/opt/airflow
-      - ./data:/opt/airflow/data
-      - ./dags:/opt/airflow/dags
-      - ./models:/opt/airflow/models
-      - ./preds:/opt/airflow/preds
-      - ./weather_risk_assessment:/opt/airflow/weather_risk_assessment
+      - ../dags:/opt/airflow/dags
+      - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
     env_file:
-      - .env
-
+      - ../.env
 
   airflow-worker:
     <<: *airflow-common
@@ -224,16 +212,12 @@ services:
         condition: service_completed_successfully
 
     volumes:
-      - ./:/opt/airflow
-      - ./data:/opt/airflow/data
-      - ./dags:/opt/airflow/dags
-      - ./models:/opt/airflow/models
-      - ./preds:/opt/airflow/preds
-      - ./weather_risk_assessment:/opt/airflow/weather_risk_assessment
+      - ../dags:/opt/airflow/dags
+      - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
     ports:
       - 8793:8793
     env_file:
-      - .env
+      - ../.env
 
 
   airflow-triggerer:
@@ -250,14 +234,10 @@ services:
       airflow-init:
         condition: service_completed_successfully
     volumes:
-      - ./:/opt/airflow
-      - ./data:/opt/airflow/data
-      - ./dags:/opt/airflow/dags
-      - ./models:/opt/airflow/models
-      - ./preds:/opt/airflow/preds
-      - ./weather_risk_assessment:/opt/airflow/weather_risk_assessment
+      - ../dags:/opt/airflow/dags
+      - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
     env_file:
-      - .env
+      - ../.env
 
   airflow-init:
     <<: *airflow-common
@@ -336,13 +316,10 @@ services:
     user: "0:0"
     volumes:
       - ${AIRFLOW_PROJ_DIR:-.}:/sources
-      - ./data:/opt/airflow/data
-      - ./dags:/opt/airflow/dags
-      - ./models:/opt/airflow/models
-      - ./preds:/opt/airflow/preds
-      - ./weather_risk_assessment:/opt/airflow/weather_risk_assessment
+      - ../dags:/opt/airflow/dags
+      - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
     env_file:
-      - .env
+      - ../.env
 
   airflow-cli:
     <<: *airflow-common

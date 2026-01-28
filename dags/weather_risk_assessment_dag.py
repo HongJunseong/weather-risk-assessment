@@ -10,18 +10,34 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.operators.python import PythonOperator
 
+from airflow.operators.bash import BashOperator
+from weather_risk_assessment.scripts.upload_bronze_to_s3 import main as upload_bronze_main
+
 import sys
 # ===== 프로젝트 루트 & 데이터 경로 =====
-PROJECT_ROOT = Path(os.getenv("PROJECT_DRE_ROOT", "/opt/airflow")).resolve()
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+PROJECT_ROOT = "/opt/airflow"  # 네 실제 프로젝트 경로
 
-
-DATA_ROOT = PROJECT_ROOT / "weather_risk_assessment" / "data"
+SILVER_RISK_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_silver_from_bronze.py"
+GOLD_LATEST_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_latest.py"
+GOLD_DAILY_JOB  = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_daily.py"
+DATA_ROOT = Path(PROJECT_ROOT) / "weather_risk_assessment" / "data"
 DATA_ROOT.mkdir(parents=True, exist_ok=True)
 SINK_DIR = Path(os.getenv("DRE_SINK_DIR", (DATA_ROOT / "live").as_posix()))
 
 KST = pendulum.timezone("Asia/Seoul")
+
+# spark-submit 공통
+SPARK_PACKAGES = (
+    "io.delta:delta-spark_2.12:3.2.0,"
+    "org.apache.hadoop:hadoop-aws:3.3.4,"
+    "com.amazonaws:aws-java-sdk-bundle:1.12.262"
+)
+DELTA_CONF = (
+    '--conf "spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension" '
+    '--conf "spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog" '
+    '--conf "spark.sql.session.timeZone=Asia/Seoul" '
+)
+SPARK_SUBMIT = f'spark-submit --packages "{SPARK_PACKAGES}" {DELTA_CONF}'
 
 
 # ===== 네트워크 기본값 =====
@@ -42,9 +58,6 @@ from weather_risk_assessment.collectors.short_forecast import collect_short_fcst
 from weather_risk_assessment.collectors.typhoon_forecast import fetch_typhoon_forecast_wide
 from weather_risk_assessment.collectors.uv_forecast import fetch_and_save_uv_wide
 
-# ===== Warehouse =====
-from weather_risk_assessment.warehouse.risk_history import main as load_risk_history_main
-
 
 import logging
 from tableauhyperapi import HyperProcess, Connection, TableDefinition, SqlType, Telemetry, Inserter, CreateMode, TableName
@@ -57,8 +70,9 @@ TABLEAU_PAT_NAME = os.environ["TABLEAU_PAT_NAME"]
 TABLEAU_PAT_SECRET = os.environ["TABLEAU_PAT_SECRET"]
 TABLEAU_PROJECT_NAME = os.environ.get("TABLEAU_PROJECT_NAME", "Default")
 TABLEAU_DS_NAME  = os.environ.get("TABLEAU_DS_NAME", "risk_latest")
-CSV_PATH   = os.environ.get("CSV_PATH", "/opt/airflow/weather_risk_assessment/data/risk_latest.csv")
-HYPER_PATH = os.environ.get("HYPER_PATH", "/opt/airflow/weather_risk_assessment/data/risk_latest.hyper")
+
+CSV_PATH   = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.csv"
+HYPER_PATH = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.hyper"
 
 
 
@@ -78,6 +92,8 @@ with DAG(
     max_active_runs=1,
     tags=["weather","kma","risk"],
 ) as dag:
+
+    RUN_DT = "{{ logical_date.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
     
     # 1) 행정 구역 중심점 생성 (lat, lon)
     t_make_admin_centroids = PythonOperator(
@@ -127,26 +143,42 @@ with DAG(
         out = fetch_and_save_uv_wide(out_path=SINK_DIR / "uv.parquet")
         return str(out)
 
+    # 7 Bronze 업로드 (수집된 원천 parquet들을 S3 bronze로)
+    t_upload_bronze = PythonOperator(
+        task_id="upload_bronze_to_s3",
+        python_callable=upload_bronze_main,
+        op_kwargs={
+            "run_dt": "{{ data_interval_start.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
+        },
+    )
 
+    # 8) Silver 변환 (S3 bronze -> S3 silver/risk_features Delta)
+    SILVER_DELTA_PATH = "s3a://junseong-weather-risk-stream/silver/kma_wide"
 
-    # 7) 위험도 계산 (wide → risk_latest.*)
-    @task(task_id="compute_risk_wide")
-    def compute_risk_wide():
-        import os, sys, subprocess
-        from pathlib import Path
+    t_build_silver = BashOperator(
+        task_id="build_silver_risk_enriched",
+        bash_command=(
+            f'{SPARK_SUBMIT} {SILVER_RISK_JOB} '
+            f'--run_dt {RUN_DT} '
+            f'--mode overwrite'
+        ),
+    )
 
-        root = Path(os.getenv("PROJECT_DRE_ROOT", "/opt/airflow")).resolve()
-        env = os.environ.copy()
-        env["PYTHONPATH"] = (env.get("PYTHONPATH", "") + f":{root.as_posix()}").lstrip(":")
+    build_gold_risk_latest = BashOperator(
+        task_id="build_gold_risk_latest",
+        bash_command=(
+            f'{SPARK_SUBMIT} {GOLD_LATEST_JOB}'
+        ),
+    )
 
-        subprocess.run(
-            [sys.executable, "-u", str(root / "weather_risk_assessment" / "scripts" / "compute_risk.py")],
-            cwd=root.as_posix(),
-            env=env,
-            check=True,  # 실패 시 예외 발생 → 태스크 실패
-        )
+    build_gold_risk_daily = BashOperator(
+        task_id="build_gold_risk_daily",
+        bash_command=(
+            f'{SPARK_SUBMIT} {GOLD_DAILY_JOB}'
+        ),
+    )
 
-    # 8) GeoJSON & QA
+    # 11) GeoJSON & Snapshot
     t_geojson = PythonOperator(
         task_id="make_geojson",
         python_callable=make_geojson_main,
@@ -158,12 +190,14 @@ with DAG(
         op_kwargs={"run_dir": SINK_DIR.as_posix()},
     )
 
-    t_load_risk_hisotry = PythonOperator(
-        task_id="load_risk_history",
-        python_callable=load_risk_history_main,
+    export_gold_parquet = BashOperator(
+        task_id="export_gold_parquet",
+        bash_command=(
+            f'{SPARK_SUBMIT} {PROJECT_ROOT}/src/weather_risk_assessment/jobs/export_gold_parquet.py'
+        ),
     )
 
-    # 9) HYPER로 변환 후 Tableau Cloud에 게시
+    # 12) HYPER로 변환 후 Tableau Cloud에 게시할 때 사용
     @task(task_id="csv_to_hyper")
     def csv_to_hyper(csv_path: str = CSV_PATH, hyper_path: str = HYPER_PATH) -> str:
         df = pd.read_csv(csv_path)
@@ -221,11 +255,11 @@ with DAG(
     # ===== DAG Task 연결 =====
     typhoon_task  = collect_typhoon_forecast_wide()
     uv_task = collect_uv_wide()
-    compute = compute_risk_wide()
 
-    hyper = csv_to_hyper()
-    pub = publish_overwrite(hyper)
+    # Hyper 변환 및 개시할 때 사용
+    # hyper = csv_to_hyper()
+    # pub = publish_overwrite(hyper)
 
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
-    >> [typhoon_task, uv_task] >> compute >> t_load_risk_hisotry \
-    >> [t_geojson, t_qa] >> hyper >> pub
+    >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
+    >> build_gold_risk_daily >> export_gold_parquet >> [t_geojson, t_qa] # >> hyper >> pub
