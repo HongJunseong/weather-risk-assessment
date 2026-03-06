@@ -1,5 +1,5 @@
-# 재해 대응을 위한 준실시간 기상 위험 평가 시스템
-*Near Real-time Weather Risk Assessment System*
+# 재해 대응을 위한 준실시간 기상 위험도 산출 파이프라인
+*Near Real-time Weather Risk Scoring Pipeline*
 
 ![python](https://img.shields.io/badge/Python-3.11-blue)
 ![airflow](https://img.shields.io/badge/Apache%20Airflow-2.7.3-017CEE)
