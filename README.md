@@ -1,285 +1,200 @@
-# 재해 대응을 위한 준실시간 기상 위험 **평가** 시스템  
-*Near Real-time Weather Risk **Assessment** System*
+# 재해 대응을 위한 준실시간 기상 위험 평가 시스템
+*Near Real-time Weather Risk Assessment System*
 
 ![python](https://img.shields.io/badge/Python-3.11-blue)
 ![airflow](https://img.shields.io/badge/Apache%20Airflow-2.7.3-017CEE)
-![kafka](https://img.shields.io/badge/Apache%20Kafka-Event/Messaging-231F20)
-![spark](https://img.shields.io/badge/Apache%20spark-3.5.1-red)
-![aws s3](https://img.shields.io/badge/AWS-S3-FF9900)
-![tableau](https://img.shields.io/badge/Tableau-Visualization-orange)
+![spark](https://img.shields.io/badge/Apache%20Spark-3.5.1-E25A1C)
+![aws s3](https://img.shields.io/badge/AWS-S3%20Delta%20Lake-FF9900)
+![slack](https://img.shields.io/badge/Slack-Alert-4A154B)
+![tableau](https://img.shields.io/badge/Tableau-Visualization-E97627)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
-> **요약**: Airflow pipeline으로 기상청 API를 1시간 단위로 수집해 **준실시간(near real-time)** 으로 위험도를 **평가/산출**하고, 이를 **Tableau**와 **kepler.gl**로 시각화할 수 있도록 하였습니다. 또한, 산출 결과는 **AWS S3** 상의 **Delta Lake*에 Medallion Architecture 구조로 누적되어, 재처리와 단계별 분석이 가능하도록 설계되었습니다. 각 단계의 데이터는 Spark 기반 처리 로직을 통해 정제·집계되며, 지속적인 스트리밍 대신 **위험 발생 시 반응하는 이벤트 중심 구조**를 지향하여 운영 복잡도를 최소화했습니다.
-
+> **요약**: 기상청(KMA) API를 1시간 주기로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, **Tableau · kepler.gl을 통한 시각화를 선택적으로 연계**할 수 있습니다.
 
 ---
 
-<h2>프로젝트 개요</h2>
-기상 데이터를 실시간으로 수집·처리하여 태풍, UV 지수, 단기 예보 기반의 지역별 위험도를 산출하고, 이를 시각적으로 제공하는 재해 대응 시스템입니다.
-Airflow 기반 데이터 파이프라인과 시각화 대시보드(Tableau, kepler.gl)를 활용하여 보다 직관적으로 기상 위험도를 파악할 수 있도록 구현했습니다.
+## 목차
+- [프로젝트 개요](#프로젝트-개요)
+- [프로젝트 배경](#프로젝트-배경)
+- [프로젝트 내용 요약](#프로젝트-내용-요약)
+- [데이터 구성](#데이터-구성)
+- [전체 시스템 구성](#전체-시스템-구성)
+- [결과 및 시각화](#결과-및-시각화)
+- [기술적 도전 과제](#기술적-도전-과제)
+- [인프라 및 개발 환경](#인프라-및-개발-환경)
+- [향후 확장 아이디어](#향후-확장-아이디어)
+- [기본 실행 가이드](#기본-실행-가이드)
+
+---
+
+## 프로젝트 개요
+
+기상 데이터를 준실시간으로 수집·처리하여 태풍, UV 지수, 강수, 폭염, 바람 등 복합 지표 기반의 지역별 위험도를 산출하는 재해 대응 시스템입니다. Airflow 기반 데이터 파이프라인과 Slack 자동 알림을 통해 위험 상황을 즉시 인지하고 대응할 수 있습니다. 파이프라인 최종 산출물은 S3 Parquet으로 Export되며, Tableau · kepler.gl 등의 시각화 도구와 선택적으로 연계할 수 있도록 설계되었습니다.
 
 ---
 
 ## 프로젝트 배경
 
-기후 위기의 가속화로 태풍·집중호우·폭염과 같은 극한 기상 현상이 더 잦고 강해지고 있습니다. 재난 대응 관점에서 중요한 것은 “최대한 빠르게, 지역 단위로 위험도를 파악해 선제적으로 대응하는 것”입니다. 단순한 경보나 뉴스보다 **시간에 민감한 위험도 정보**가 실제 의사결정에 더 직접적인 도움이 됩니다.
+기후 위기의 가속화로 태풍·집중호우·폭염과 같은 극한 기상 현상이 더 잦고 강해지고 있습니다. 재난 대응 관점에서 중요한 것은 "최대한 빠르게, 지역 단위로 위험도를 파악해 선제적으로 대응하는 것"입니다.
 
-기상청(KMA)은 초단기/단기예보, 생활기상지수(UV), 태풍 정보 등 다양한 지표를 공개하지만, 각 지표는 포맷과 단위가 제각각이고 시간축도 다르게 제공됩니다. 결과적으로 **지표를 종합해 한눈에 비교 가능한 ‘지역별 위험도’로 해석**하기 어렵고, 실무자는 매번 데이터를 풀어서 읽고 조합해야 하는 부담을 겪습니다.
+기상청(KMA)은 초단기/단기예보, 생활기상지수(UV), 태풍 정보 등 다양한 지표를 공개하지만, 각 지표는 포맷과 단위가 제각각이고 시간축도 다르게 제공됩니다. **지표를 종합해 한눈에 비교 가능한 '지역별 위험도'로 해석**하기 어렵고, 실무자는 매번 데이터를 풀어서 읽고 조합해야 하는 부담이 있습니다.
 
-또한 많은 대시보드가 수동 갱신에 의존하거나 특정 지표만 보여 주어, **최신성 확보와 종합 판단**에 한계가 있습니다. 본 프로젝트는 이러한 간극을 해소하기 위해, **1시간 주기 데이터 수집 → 지표별 위험도 계산 → 지역별 종합 위험도 산출 → 시각화**로 이어지는 흐름을 통해 **즉시 활용 가능한 형태의 위험도 정보를 제공**하는 것을 목표로 합니다. 이는 예측 모델링이 아니라 **평가/산출/모니터링**에 초점을 맞춘 접근으로, 재해 대응의 현장성과 실용성을 강화합니다.
+본 프로젝트는 **1시간 주기 수집 → 위험도 산출 → S3 Delta Lake 적재 → 위험 지역 자동 알림 → 시각화**로 이어지는 흐름을 통해 즉시 활용 가능한 위험도 정보를 제공하는 것을 목표로 합니다.
 
 ---
 
 ## 프로젝트 내용 요약
 
-- **데이터 파이프라인 구축** : Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고, 원천 데이터를 표준 스키마로 정제  
-- **위험도 산출 로직 구현** : 강수, 폭염, 태풍, 자외선 등 지표별 위험도 계산 함수를 개발하고, 가중합을 통해 종합 위험도(`r_total`) 산출  
-- **데이터 저장소** : 수집 데이터는 AWS S3 상의 Delta Lake에 Bronze–Silver–Gold 단계로 누적 저장하여, 원천 보존·정제·집계 흐름을 명확히 분리
-- **Spark 기반 데이터 처리** : Silver/Gold 단계 변환 및 집계 로직을 Spark로 처리해, 데이터 규모 증가 시에도 재처리(backfill)와 확장 분석이 가능하도록 설계
-- **시각화 연계** : 산출된 위험도 결과를 기반으로 Tableau 및 kepler.gl에서 지역별·시간대별 위험도 변화를 직관적으로 확인 가능
-- **품질 및 신뢰성 고려** : 시간 정렬(KST 기준), 결측치 처리, 중복 방지 로직을 통해 위험도 산출 결과의 일관성과 신뢰성을 유지
-
+- **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고 원천 데이터를 표준 스키마로 정제
+- **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선, 바람 등 지표별 위험도 계산 함수를 개발하고, 가중합과 최고값 기반으로 종합 위험도(`R_total`) 산출. 가중치는 `risk/config.py` 단일 파일에서 중앙 관리
+- **Medallion Architecture**: 수집 데이터를 AWS S3 Delta Lake에 Bronze(원천) → Silver(정제·위험도) → Gold(집계·최신) 단계로 누적 저장하여 원천 보존과 단계별 재처리(backfill) 가능
+- **Spark 기반 데이터 처리**: Silver/Gold 단계 변환 및 집계를 PySpark로 처리. `mapInPandas`를 활용해 기존 pandas 기반 위험도 함수를 Spark 파이프라인에 통합
+- **Slack 자동 알림**: 파이프라인 완료 후 `R_total ≥ 0.6` (HIGH 이상) 지역이 감지되면 Slack Webhook으로 자동 알림 전송. 위험 지역 없을 시에도 "안전" 알림으로 파이프라인 정상 동작을 확인
+- **시각화 연계** *(선택)*: 파이프라인이 Export한 Parquet을 Tableau · kepler.gl에 연결하여 지역별·시간대별 위험도 변화를 직관적으로 확인 가능. DAG 내 Tableau 게시 태스크는 주석 처리되어 있으며, 필요 시 `.env`에 `TABLEAU_*` 환경변수를 설정해 활성화할 수 있음
+- **품질 및 신뢰성**: KST 시간 정렬, 결측치 처리, 중복 방지 로직을 통해 산출 결과의 일관성 유지
 
 ---
 
 ## 데이터 구성
-- **출처**: 기상청 API
-  - 초단기예보(기온·강수·풍속 등), 단기예보(시간별 변화)
-  - 생활기상지수(UV Index), 태풍 예측(위치·거리·최대 풍속)
-- **처리**: API 호출 → 전처리 → `scripts/compute_risk.py`에서 지표별 위험도 함수 스코어링 및 각 지표의 가중합을 통합 위험도 계산 → `risk_latest.parquet` 생성
-- **저장**: Parquet/CSV(로컬 검증 및 시각화·자동화) + **AWS S3(Delta Lake, Spark 분석용)**
+
+- **출처**: 기상청 Open API
+  - 초단기예보 (기온·강수·풍속 등)
+  - 단기예보 (강수확률·하늘상태 등)
+  - 생활기상지수 (UV Index)
+  - 태풍 예측 (위치·거리·최대 풍속)
+
+- **처리 흐름**:
+  ```
+  API 수집 → Bronze(S3) → Spark Silver(정제·위험도 산출) → Spark Gold(집계) → Export Parquet
+  ```
+
+- **위험도 계산 공식**:
+  ```
+  R_total = 0.7 × peak + 0.3 × weighted_avg
+  가중치: 강수 28% | 바람 22% | 태풍 20% | 폭염 18% | UV 12%
+  ```
+
+- **저장**: AWS S3 Delta Lake (Bronze / Silver / Gold / Export)
 
 ---
 
 ## 전체 시스템 구성
-<img width="600" height="750" alt="image" src="https://github.com/user-attachments/assets/bfb0d682-7fa1-4a84-a90e-ad838eca8c31" />
 
 ```mermaid
 flowchart LR
   A["KMA API<br>1시간 주기 수집"] --> B["Airflow<br>Orchestration"]
-  B --> C["Bronze<br>S3 Delta Lake<br>(Raw)"]
-  C --> D["Spark Transform"]
-  D --> E["Silver<br>S3 Delta Lake<br>(Standardized)"]
-  E --> F["Spark Aggregate"]
-  F --> G["Gold<br>S3 Delta Lake<br>(Risk Metrics)"]
-  G --> V["Visualization<br>Tableau / kepler.gl"]
+  B --> C["Bronze<br>S3 Delta Lake<br>원천 데이터"]
+  C --> D["Spark<br>Silver Transform"]
+  D --> E["Silver<br>S3 Delta Lake<br>정제 + 위험도"]
+  E --> F["Spark<br>Gold Aggregate"]
+  F --> G["Gold<br>S3 Delta Lake<br>최신·일별 집계"]
+  G --> H["Export<br>S3 Parquet"]
+  H -.->|선택| V["Tableau<br>kepler.gl"]
+  H --> S["Slack<br>위험 지역 자동 알림"]
 ```
 
-(수집·위험도 산출 DAG는 1시간 주기, Streaming DAG는 동일 주기로 자동 실행)
-
-
-- **Airflow DAG**: 주기 실행 · 오류 로그 · 자동 재시도(백오프)
+- **Airflow DAG**: 1시간 주기 실행, 오류 시 자동 재시도(백오프)
 - **타임존**: `Asia/Seoul`(KST) 기준 스케줄링
+- **Slack 알림**: HIGH(`≥0.6`) / VERY_HIGH(`≥0.8`) 지역 감지 시 자동 전송
 
 ---
 
 ## 결과 및 시각화
 
-### Tableau dashboard
-- 지역별 **종합 위험도** 및 지표별 비교(UV, 강수, 풍속, 태풍 거리)
-- **툴팁**에 예측 시각/원천 지표 노출
-- Airflow task에서 Hyper 파일을 생성 후 Tableau Cloud와 연동하여, 데이터가 갱신될 때마다 대시보드도 자동으로 최신 상태로 반영되도록 구성
-  > 현재 자동 최신화 기능은 임시로 제외하였습니다.
-- 아래와 같이, 시간대 별로 위험도가 변화하는 모습을 확인할 수 있음
+### Slack 알림
+파이프라인 완료 후 위험도 임계값을 초과한 지역이 발생하면 자동으로 알림이 전송됩니다.
+
+```
+🚨 기상 위험 지역 알림
+🔴 *강원도 강릉시*  |  위험도: 0.83 (VERY_HIGH)  |  예보: 2025-08-10 14:00
+🟠 *경상남도 창원시*  |  위험도: 0.67 (HIGH)  |  예보: 2025-08-10 14:00
+```
+
+위험 지역이 없을 경우:
+```
+✅ 기상 위험 알림 | 현재 위험 지역 없음
+```
+
+### Tableau 대시보드 *(선택적 연계)*
+Export된 Parquet을 Tableau에 연결하여 사용합니다. DAG의 `csv_to_hyper` / `publish_overwrite` 태스크는 기본적으로 비활성화 상태이며, `.env`에 `TABLEAU_*` 환경변수를 설정하면 Tableau Cloud에 자동 게시됩니다.
+
+- 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 풍속, 태풍 거리)
+- **툴팁**에 예측 시각 및 원천 지표 노출
 
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
 
+### kepler.gl *(선택적 연계)*
+Export된 Parquet을 kepler.gl에 드래그&드롭하여 즉시 시각화할 수 있습니다.
 
-### kepler.gl
-- 행정구역 중심 좌표를 **간단 확인용 지도**로 표시
-- 필요 시 특정 시점/구간만 **보조적으로** 사용
-- 아래와 같이, 현재 시각을 기준으로 한 전국 위험도를 파악할 수 있음
+- 행정구역 중심 좌표 기반 **지리 공간 시각화**
+- 전국 위험도 분포를 지도 위에서 직관적으로 확인
 
-<img width="520" height="500" alt="kepler gl (1)" src="https://github.com/user-attachments/assets/632f96c4-10d7-4db5-99b8-bdec51826492" />
-
-
+<img width="520" height="500" alt="kepler gl" src="https://github.com/user-attachments/assets/632f96c4-10d7-4db5-99b8-bdec51826492" />
 
 ### 품질 검증 지표
-위험도 산출 파이프라인의 **신뢰성과 재현성**을 확인하기 위해,  
-아래 지표들을 기준으로 **데이터 품질을 점검·검증**했습니다.
 
-- **데이터 최신성**: `now() - max(fcst_time)`
-- **커버리지**: 최신 `fcst_time` 의 (nx, ny) 수
-- **결측률**: 주요 지표`(r_total, rn1, wsd, t1h, reh, pty, sky, uvi)`의 NULL 비율
-- **증분 적재량**: 1시간 단위 신규/갱신 row 수
-- **중복 차단**: (nx,ny,fcst_time) 중복 0 유지
+파이프라인의 신뢰성을 확인하기 위해 아래 지표를 기준으로 데이터 품질을 점검합니다.
 
-### SQL 예시
-
-```sql
--- A) 파이프라인 최신성(분) & 최신 예보 리드 타임(분)
-SELECT
-  ROUND( (EXTRACT(EPOCH FROM (NOW() - MAX(source_run_at))) / 60.0)::numeric , 1) AS pipeline_latency_min,
-  ROUND( (EXTRACT(EPOCH FROM (MAX(fcst_time) - NOW()))          / 60.0)::numeric , 1) AS latest_fcst_lead_min
-FROM risk_history_wide;
-
--- B) 최신 fcst_time의 커버리지(그리드 수)와 로우 수
-WITH m AS (SELECT MAX(fcst_time) AS ft FROM risk_history_wide)
-SELECT
-  (SELECT COUNT(*) FROM risk_history_wide WHERE fcst_time = (SELECT ft FROM m)) AS rows_latest_step,
-  (SELECT COUNT(*) FROM (SELECT DISTINCT nx,ny FROM risk_history_wide
-                         WHERE fcst_time = (SELECT ft FROM m)) g) AS grids_latest_step;
-
--- C) 최근 실행에 대한 주요 지표 결측률
-WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
-SELECT
-  ROUND(100.0 * AVG((r_total IS NULL)::int), 2) AS r_total_null_pct,
-  ROUND(100.0 * AVG((rn1     IS NULL)::int), 2) AS rn1_null_pct,
-  ROUND(100.0 * AVG((wsd     IS NULL)::int), 2) AS wsd_null_pct,
-  ROUND(100.0 * AVG((t1h     IS NULL)::int), 2) AS t1h_null_pct,
-  ROUND(100.0 * AVG((reh     IS NULL)::int), 2) AS reh_null_pct,
-  ROUND(100.0 * AVG((pty     IS NULL)::int), 2) AS pty_null_pct,
-  ROUND(100.0 * AVG((sky     IS NULL)::int), 2) AS sky_null_pct,
-  ROUND(100.0 * AVG((uvi     IS NULL)::int), 2) AS uvi_null_pct
-FROM risk_history_wide
-WHERE source_run_at = (SELECT sr FROM s);
-
-
--- D) 최근 실행에서 UPSERT 된 총 행 수
-WITH s AS (SELECT MAX(source_run_at) AS sr FROM risk_history_wide)
-SELECT COUNT(*) AS rows_touched_in_last_run
-FROM risk_history_wide
-WHERE source_run_at = (SELECT sr FROM s);
-
-
--- E) 최근 6 시간 지역별 평균 위험도
-SELECT admin_names,
-       ROUND(AVG(r_total)::numeric, 3) AS avg_risk_6h
-FROM risk_history_wide
-WHERE fcst_time >= NOW() - INTERVAL '6 hours'
-GROUP BY admin_names
-ORDER BY avg_risk_6h DESC
-LIMIT 20;
-
--- F) 중복 점검(스냅샷 무시 모드에서 항상 0행이어야 정상)
-SELECT nx, ny, fcst_time, COUNT(*) AS dup_cnt
-FROM risk_history_wide
-GROUP BY 1,2,3
-HAVING COUNT(*) > 1;
-
-```
-
+| 지표 | 설명 |
+|---|---|
+| 데이터 최신성 | `now() - max(fcst_time)` |
+| 커버리지 | 최신 `fcst_time`의 (nx, ny) 그리드 수 |
+| 결측률 | 주요 지표 (`R_total`, `RN1`, `WSD`, `T1H` 등) NULL 비율 |
+| 증분 적재량 | 1시간 단위 신규/갱신 row 수 |
+| 중복 차단 | (nx, ny, fcst_time) 중복 0 유지 |
 
 ---
 
 ## 기술적 도전 과제
 
-| 문제(실제 이슈) | 내가 취한 접근 | 결과/효과 |
+| 문제 | 접근 방식 | 결과 |
 |---|---|---|
-| API가 XML/JSON 등 서로 다른 포맷 + 필드 네이밍 상이 | 공통 파서와 스키마 표준화 계층을 만들고, 변환 규칙을 유닛 테스트로 고정 | 수집/전처리 코드 단순화, 스키마 일관성 확보로 후속 파이프라인 안정화 |
-| 초단기/단기/UV 기준시각 불일치로 시간축( `fcstTime` ) 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정(최근 유효값 채택) | 시간 정렬 버그 제거, 대시보드 시점 혼선 해소 |
-| 행정구역 좌표(Nx, Ny) 중복/충돌로 조인 불안정 | `admin_list.csv` 정제 + **중심점 중복 제거 함수**로 `admin_code`-좌표 매핑 고정 | 조인 키 일관성 확보, 지역별 집계의 신뢰도 향상 |
-| Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃·리트라이 설정 | 간헐적 API 장애에도 파이프라인 복원력↑ |
-| Tableau가 수동 새로고침 의존 | Hyper 파일을 생성하여 Tableau와 연결(스케줄 새로고침) | Airflow 갱신 → 대시보드 자동 반영(운영 부담↓) |
-| 지표 단위/스케일 불일치(UV·강수·풍속·태풍 거리 혼재) | 지표별 **위험도 계산 함수**를 구현하고, 이를 통해 스코어링한 뒤, 각 지표별 가중치를 반영한 통합 위험도(`r_total`) 계산** | 지표 해석의 일관성·비교 가능성 확보, 외부 설정 파일 의존 없음 |
-| 로컬 검증과 운영 데이터 소스가 달라 재현성 저하 | **Parquet + DB 병행** 운영: Parquet(로컬 검증/백업), DB(운영/시각화) | 개발-운영 격차 축소, 빠른 로컬 디버깅 가능 |
-| Airflow 재실행 등으로 인한 DB 예보 누적/중복 | UNIQUE (nx,ny,fcst_time) + ON CONFLICT ... DO UPDATE(단, EXCLUDED.source_run_at >= 기존일 때만 갱신) 등 조건을 설정함 | 겹치는 단계는 업데이트, 새 단계만 INSERT → 1시간 주기 증분화, 행 수 예측 가능 |
-| streaming dag 재실행 시 이벤트 중복 발생 | Kafka Payload 해시 생성 | 중복 데이터 스트리밍 차단 |
-
-> 시각화 전략: **Tableau 중심**(라이브 연결, 툴팁에 예측 시각·원천 지표 노출).  
-> kepler.gl은 공간 분포 확인이 필요할 때 **보조적으로** 사용.
+| API마다 포맷·필드명 상이 (XML/JSON 혼재) | 공통 파서와 스키마 표준화 계층 구현 | 수집/전처리 단순화, 후속 파이프라인 안정화 |
+| 초단기/단기/UV 기준시각 불일치로 시간축 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정 | 시간 정렬 버그 제거 |
+| 행정구역 좌표(Nx, Ny) 중복·충돌로 조인 불안정 | `admin_centroids.csv` 정제 + 중심점 중복 제거 함수로 좌표 매핑 고정 | 조인 키 일관성 확보 |
+| 지표 단위·스케일 불일치 (UV·강수·풍속·태풍 혼재) | 지표별 위험도 함수 구현 후 가중합으로 `R_total` 산출. 가중치를 `risk/config.py`에 중앙화하여 Spark/로컬 경로 모두 단일 소스 공유 | 지표 일관성 확보, 유지보수성 향상 |
+| pandas 기반 위험도 함수를 Spark에 통합 | `mapInPandas`로 파티션 단위 pandas 함수 실행 | 기존 로직 재사용하면서 분산 처리 가능 |
+| Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃 설정 | 간헐적 API 장애에도 파이프라인 복원력 향상 |
+| 위험 상황 인지 지연 | 파이프라인 완료 후 `R_total ≥ 0.6` 지역을 감지해 Slack Webhook으로 자동 알림 | 위험 발생 즉시 담당자 인지 가능 |
 
 ---
 
 ## 인프라 및 개발 환경
-- **Python version**: Python 3.11
-- **Workflow**: Apache Airflow 2.7.3 (Docker Compose)
-- **Storage**: Parquet/CSV + AWS S3(Delta Lake)
-- **Event/Messaging**: Kafka
-- **Processing**: pandas + Spark(Pyspark)
-- **Visualization**: **Tableau Public**, **kepler.gl**
+
+- **Python**: 3.11
+- **Workflow**: Apache Airflow 2.7.3 (Docker Compose, CeleryExecutor)
+- **Processing**: pandas + PySpark 3.5.1
+- **Storage**: AWS S3 Delta Lake (Medallion Architecture)
+- **Alert**: Slack Incoming Webhook
+- **Visualization** *(optional)*: Tableau, kepler.gl
 - **Infrastructure**: Docker Compose + AWS S3
 
 ---
-### DDL 예시 (최소 스키마)
 
-```sql
-CREATE TABLE IF NOT EXISTS risk_history_wide (
-      nx            INTEGER NOT NULL,
-      ny            INTEGER NOT NULL,
-      admin_names   TEXT,
-      base_date     DATE,
-      fcst_date     DATE,
-      fcst_time     TIMESTAMPTZ NOT NULL,
-      source_run_at TIMESTAMPTZ NOT NULL,
-      RN1           DOUBLE PRECISION,
-      WSD           DOUBLE PRECISION,
-      UUU           DOUBLE PRECISION,
-      VVV           DOUBLE PRECISION,
-      T1H           DOUBLE PRECISION,
-      REH           DOUBLE PRECISION,
-      PTY           DOUBLE PRECISION,
-      SKY           DOUBLE PRECISION,
-      UVI           DOUBLE PRECISION,
-      R_rain        DOUBLE PRECISION,
-      R_heat        DOUBLE PRECISION,
-      R_wind        DOUBLE PRECISION,
-      R_uv          DOUBLE PRECISION,
-      R_typhoon     DOUBLE PRECISION,
-      R_total       DOUBLE PRECISION,
-      CONSTRAINT pk_rhw PRIMARY KEY (nx, ny, fcst_time)
-    );
-    CREATE INDEX IF NOT EXISTS idx_rhw_fcst ON risk_history_wide (fcst_time);
-
-
-```
-
-### 분석 쿼리 예시
-
-```sql
--- 특정 격자(nx,ny)의 시계열(최근 24시간)
-SELECT
-  fcst_time AT TIME ZONE 'Asia/Seoul' AS fcst_kst,
-  r_total, rn1, wsd, t1h, reh, pty, sky, uvi
-FROM risk_history_wide
-WHERE nx = 60 AND ny = 127
-  AND fcst_time >= NOW() - INTERVAL '24 hours'
-ORDER BY fcst_time;
-
-```
-
----
 ## 향후 확장 아이디어
+
 - **머신러닝 기반 예측 모델 결합**: 단순 평가 → 위험도 예측으로 확장
-- **PostGIS 공간 분석 적용**: 태풍 경로와 행정구역 교차 연산으로 직접 피해 예측
-- **알림 시스템**: 특정 위험도 임계값 초과 시 Slack/이메일 자동 알림
+- **PostGIS 공간 분석 적용**: 태풍 경로와 행정구역 교차 연산으로 직접 피해 범위 예측
+- **REST API 레이어 추가**: FastAPI로 위험도 데이터를 외부 서비스에 제공
 
 ---
 
 ## 기본 실행 가이드
-```bash
 
-## 0) repository clone
+```bash
+# 1) 저장소 클론
 git clone <YOUR_REPO_URL>
 cd weather-risk-assessment
 
-## 1) Airflow 실행 (docker-compose.yaml 있는 폴더로)
-cd airflow
+# 2) .env 생성 (.env.example 참고)
+cp .env.example .env
+# .env 파일에 KMA_API_KEY, AWS 키, S3 버킷명, Slack Webhook URL 입력
 
-## 2) .env 생성 (Airflow 권장 UID/GID + AWS/S3 + KMA API Key)
-echo "AIRFLOW_UID=$(id -u)" > .env
-echo "AIRFLOW_GID=$(id -g)" >> .env
-
-cat >> .env <<'EOF'
-# --- Timezone ---
-TZ=Asia/Seoul
-
-# --- KMA API KEY ---
-KMA_API_KEY=YOUR_KMA_API_KEY
-
-# --- AWS / S3 (Delta Lake Storage) ---
-AWS_REGION=ap-northeast-2
-AWS_ACCESS_KEY_ID=YOUR_AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY=YOUR_AWS_SECRET_ACCESS_KEY
-
-# Bronze/Silver/Gold Delta paths (S3)
-BRONZE_ULTRA_SHORTFCST=s3a://{YOUR_S3_BUCKET_PATH}
-SILVER_KMA_WIDE=s3a://{YOUR_S3_BUCKET_PATH}
-GOLD_RISK_METRICS=s3a://{YOUR_S3_BUCKET_PATH}
-EOF
-
-## 3) 컨테이너 기동
+# 3) Airflow 컨테이너 실행
+cd docker
 docker compose up -d
 
-
+# 4) Airflow UI 접속
+# http://localhost:8080  (ID: airflow / PW: airflow)
+# weather_risk_assessment DAG 활성화 후 실행
 ```
