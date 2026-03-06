@@ -20,7 +20,7 @@ PROJECT_ROOT = "/opt/airflow"  # 네 실제 프로젝트 경로
 SILVER_RISK_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_silver_from_bronze.py"
 GOLD_LATEST_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_latest.py"
 GOLD_DAILY_JOB  = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_daily.py"
-DATA_ROOT = Path(PROJECT_ROOT) / "weather_risk_assessment" / "data"
+DATA_ROOT = Path(PROJECT_ROOT) / "src" / "weather_risk_assessment" / "data"
 DATA_ROOT.mkdir(parents=True, exist_ok=True)
 SINK_DIR = Path(os.getenv("DRE_SINK_DIR", (DATA_ROOT / "live").as_posix()))
 
@@ -57,20 +57,14 @@ from weather_risk_assessment.collectors.ultra_nowcast_shortfcst import run_once 
 from weather_risk_assessment.collectors.short_forecast import collect_short_fcst
 from weather_risk_assessment.collectors.typhoon_forecast import fetch_typhoon_forecast_wide
 from weather_risk_assessment.collectors.uv_forecast import fetch_and_save_uv_wide
+from weather_risk_assessment.alerts.slack_alert import send_high_risk_alerts
 
 
 import logging
-from tableauhyperapi import HyperProcess, Connection, TableDefinition, SqlType, Telemetry, Inserter, CreateMode, TableName
-import tableauserverclient as TSC
-import pandas as pd
 
-TABLEAU_SERVER   = os.environ["TABLEAU_SERVER"]
-TABLEAU_SITE_ID  = os.environ.get("TABLEAU_SITE_ID", "")
-TABLEAU_PAT_NAME = os.environ["TABLEAU_PAT_NAME"]
-TABLEAU_PAT_SECRET = os.environ["TABLEAU_PAT_SECRET"]
-TABLEAU_PROJECT_NAME = os.environ.get("TABLEAU_PROJECT_NAME", "Default")
-TABLEAU_DS_NAME  = os.environ.get("TABLEAU_DS_NAME", "risk_latest")
-
+# --- Tableau (선택적 사용) ---
+# csv_to_hyper / publish_overwrite 태스크를 활성화하려면
+# TABLEAU_* 환경변수를 .env에 설정하고 DAG 하단 주석을 해제하세요.
 CSV_PATH   = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.csv"
 HYPER_PATH = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.hyper"
 
@@ -122,9 +116,8 @@ with DAG(
         task_id="collect_short_fcst",
         python_callable=collect_short_fcst,
         op_kwargs={
-            "admin_csv": (DATA_ROOT/"unique_admin_centroids.csv").as_posix(),
-            "out_dir": SINK_DIR.as_posix(),
-            "sample_n": 0,
+            "call_list_csv": DATA_ROOT / "unique_admin_centroids.csv",
+            "out_path":      SINK_DIR / "short_fcst.parquet",
         },
     )
 
@@ -200,6 +193,12 @@ with DAG(
     # 12) HYPER로 변환 후 Tableau Cloud에 게시할 때 사용
     @task(task_id="csv_to_hyper")
     def csv_to_hyper(csv_path: str = CSV_PATH, hyper_path: str = HYPER_PATH) -> str:
+        import pandas as pd
+        from tableauhyperapi import (
+            HyperProcess, Connection, TableDefinition, SqlType,
+            Telemetry, Inserter, CreateMode, TableName,
+        )
+
         df = pd.read_csv(csv_path)
 
         def infer_sqltype(s: pd.Series):
@@ -224,33 +223,46 @@ with DAG(
                     ins.execute()
         logging.info("HYPER created: %s", hyper_path)
         return hyper_path
-    
+
     @task(task_id="publish_overwrite")
     def publish_overwrite(hyper_path: str):
-        server = TSC.Server(TABLEAU_SERVER, use_server_version=True)
-        auth = TSC.PersonalAccessTokenAuth(TABLEAU_PAT_NAME, TABLEAU_PAT_SECRET, site_id=TABLEAU_SITE_ID)
+        import tableauserverclient as TSC
+
+        tableau_server       = os.environ["TABLEAU_SERVER"]
+        tableau_site_id      = os.environ.get("TABLEAU_SITE_ID", "")
+        tableau_pat_name     = os.environ["TABLEAU_PAT_NAME"]
+        tableau_pat_secret   = os.environ["TABLEAU_PAT_SECRET"]
+        tableau_project_name = os.environ.get("TABLEAU_PROJECT_NAME", "Default")
+        tableau_ds_name      = os.environ.get("TABLEAU_DS_NAME", "risk_latest")
+
+        server = TSC.Server(tableau_server, use_server_version=True)
+        auth = TSC.PersonalAccessTokenAuth(tableau_pat_name, tableau_pat_secret, site_id=tableau_site_id)
         server.auth.sign_in(auth)
         try:
-            # 프로젝트 찾기
             project_id = None
             for p in TSC.Pager(server.projects):
-                if p.name == TABLEAU_PROJECT_NAME:
+                if p.name == tableau_project_name:
                     project_id = p.id; break
             if not project_id:
-                raise RuntimeError(f"Project not found: {TABLEAU_PROJECT_NAME}")
+                raise RuntimeError(f"Project not found: {tableau_project_name}")
 
-            # 이름으로 데이터소스 탐색
             exists = None
             for ds in TSC.Pager(server.datasources):
-                if ds.name == TABLEAU_DS_NAME:
+                if ds.name == tableau_ds_name:
                     exists = ds; break
 
-            item = TSC.DatasourceItem(project_id=project_id, name=TABLEAU_DS_NAME)
+            item = TSC.DatasourceItem(project_id=project_id, name=tableau_ds_name)
             mode = TSC.Server.PublishMode.Overwrite if exists else TSC.Server.PublishMode.CreateNew
             server.datasources.publish(item, hyper_path, mode=mode)
-            logging.info("Published to Tableau Cloud: %s (mode=%s)", TABLEAU_DS_NAME, mode)
+            logging.info("Published to Tableau Cloud: %s (mode=%s)", tableau_ds_name, mode)
         finally:
             server.auth.sign_out()
+
+    # HIGH 이상 지역 Kafka 알림
+    t_send_alerts = PythonOperator(
+        task_id="send_high_risk_alerts_to_kafka",
+        python_callable=send_high_risk_alerts,
+    )
 
     # ===== DAG Task 연결 =====
     typhoon_task  = collect_typhoon_forecast_wide()
@@ -262,4 +274,4 @@ with DAG(
 
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
     >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
-    >> build_gold_risk_daily >> export_gold_parquet >> [t_geojson, t_qa] # >> hyper >> pub
+    >> build_gold_risk_daily >> export_gold_parquet >> [t_geojson, t_qa] >> t_send_alerts # >> hyper >> pub

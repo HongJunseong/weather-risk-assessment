@@ -12,8 +12,8 @@ from pyspark.sql.types import (
     StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
 )
 
-# === 너 프로젝트 고정값 (env 없이) ===
-BUCKET = "junseong-weather-risk-stream"
+import os
+BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 BRONZE_PREFIX = "bronze/kma"
 
 # silver base (너가 말한 경로 기준) + 결과는 risk_enriched로 분리 추천

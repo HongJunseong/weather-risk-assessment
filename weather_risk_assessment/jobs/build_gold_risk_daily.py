@@ -1,7 +1,8 @@
 from __future__ import annotations
 from pyspark.sql import SparkSession, functions as F
 
-BUCKET = "junseong-weather-risk-stream"
+import os
+BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 SILVER = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
 GOLD   = f"s3a://{BUCKET}/gold/risk_daily"
 
