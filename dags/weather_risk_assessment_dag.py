@@ -49,7 +49,6 @@ os.environ.setdefault("KMA_LOG_LEVEL", "WARNING")
 from weather_risk_assessment.scripts.build_admin_centroids_from_shp import main as make_admin_centroids_main
 from weather_risk_assessment.scripts.make_admin_list import main as make_admin_list_main
 from weather_risk_assessment.scripts.make_kepler_geojson import main as make_geojson_main
-from weather_risk_assessment.scripts.qa_snapshot import main as qa_snapshot_main
 
 
 # ===== Collectors =====
@@ -171,15 +170,10 @@ with DAG(
         ),
     )
 
-    # 11) GeoJSON & Snapshot
+    # 11) GeoJSON
     t_geojson = PythonOperator(
         task_id="make_geojson",
         python_callable=make_geojson_main,
-        op_kwargs={"run_dir": SINK_DIR.as_posix()},
-    )
-    t_qa = PythonOperator(
-        task_id="qa_snapshot",
-        python_callable=qa_snapshot_main,
         op_kwargs={"run_dir": SINK_DIR.as_posix()},
     )
 
@@ -274,4 +268,4 @@ with DAG(
 
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
     >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
-    >> build_gold_risk_daily >> export_gold_parquet >> [t_geojson, t_qa] >> t_send_alerts # >> hyper >> pub
+    >> build_gold_risk_daily >> export_gold_parquet >> t_geojson >> t_send_alerts # >> hyper >> pub
