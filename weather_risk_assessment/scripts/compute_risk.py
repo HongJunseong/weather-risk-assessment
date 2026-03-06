@@ -12,6 +12,7 @@ from weather_risk_assessment.risk.rain_risk import compute_rain_risk
 from weather_risk_assessment.risk.typhoon_risk import compute_typhoon_risk
 from weather_risk_assessment.risk.wind_risk import compute_wind_risk
 from weather_risk_assessment.risk.uv_risk import compute_uv_risk
+from weather_risk_assessment.risk.config import compute_r_total
 
 
 import sys, traceback
@@ -161,14 +162,7 @@ def main():
     df["R_typhoon"] = compute_typhoon_risk(df)
 
     # 가중 평균 + 최고값 기반 종합 점수
-    w = {"rain":0.28, "heat":0.18, "wind":0.22, "uv":0.12, "typhoon":0.20}
-    weighted = (
-        w["rain"]*df["R_rain"] + w["heat"]*df["R_heat"] +
-        w["wind"]*df["R_wind"] + w["uv"]*df["R_uv"] +
-        w["typhoon"]*df["R_typhoon"]
-    ).clip(0, 1)
-    peak = pd.concat([df["R_rain"], df["R_heat"], df["R_wind"], df["R_uv"], df["R_typhoon"]], axis=1).max(axis=1)
-    df["R_total"] = (0.7*peak + 0.3*weighted).clip(0, 1)
+    df["R_total"] = compute_r_total(df)
 
     # ---------------- 행정구역 정보 병합 ----------------
     adm_map = load_admin_map(ADMIN_MAP)

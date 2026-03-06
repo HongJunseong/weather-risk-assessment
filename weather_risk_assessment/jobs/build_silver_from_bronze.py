@@ -30,6 +30,7 @@ from weather_risk_assessment.risk.rain_risk import compute_rain_risk
 from weather_risk_assessment.risk.typhoon_risk import compute_typhoon_risk
 from weather_risk_assessment.risk.wind_risk import compute_wind_risk
 from weather_risk_assessment.risk.uv_risk import compute_uv_risk
+from weather_risk_assessment.risk.config import compute_r_total
 
 
 def now_run_dt_kst() -> str:
@@ -163,20 +164,7 @@ def add_risks_map_in_pandas(df: DataFrame) -> DataFrame:
             pdf["R_wind"]    = compute_wind_risk(pdf)
             pdf["R_uv"]      = compute_uv_risk(pdf)
             pdf["R_typhoon"] = compute_typhoon_risk(pdf)
-
-            w = {"rain":0.28, "heat":0.18, "wind":0.22, "uv":0.12, "typhoon":0.20}
-            weighted = (
-                w["rain"]*pdf["R_rain"] + w["heat"]*pdf["R_heat"] +
-                w["wind"]*pdf["R_wind"] + w["uv"]*pdf["R_uv"] +
-                w["typhoon"]*pdf["R_typhoon"]
-            ).clip(0, 1)
-
-            peak = pd.concat(
-                [pdf["R_rain"], pdf["R_heat"], pdf["R_wind"], pdf["R_uv"], pdf["R_typhoon"]],
-                axis=1
-            ).max(axis=1)
-
-            pdf["R_total"] = (0.7*peak + 0.3*weighted).clip(0, 1)
+            pdf["R_total"]   = compute_r_total(pdf)
 
             yield pdf
 

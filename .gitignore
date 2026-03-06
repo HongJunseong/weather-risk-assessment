@@ -48,3 +48,6 @@ Thumbs.db
 
 # .sh files 
 *.sh
+
+# claude
+CLAUDE.md
