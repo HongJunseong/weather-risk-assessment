@@ -2,6 +2,8 @@ from __future__ import annotations
 from pyspark.sql import SparkSession, functions as F
 
 import os
+from weather_risk_assessment.contracts.medallion import validate_spark_frame
+
 BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 SILVER = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
 GOLD   = f"s3a://{BUCKET}/gold/risk_daily"
@@ -32,6 +34,8 @@ def main():
           .withColumn("max_time", F.col("max_struct")["fcstTime"])
           .drop("max_struct")
     )
+
+    validate_spark_frame("gold_risk_daily", daily).raise_for_errors()
 
     (daily.write.format("delta")
           .mode("overwrite")

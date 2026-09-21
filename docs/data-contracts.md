@@ -29,3 +29,19 @@
 이 fixture는 KMA 응답 필드 구조를 재현한 테스트 데이터이며 실제 운영 응답 원본은 아니다.
 API 스키마 변경을 발견하면 개인정보나 인증정보를 제거한 응답 사례를 추가하고 기존
 fixture를 무조건 덮어쓰지 않는다.
+
+## Silver·Gold 계약
+
+Silver와 Gold는 Delta 저장 직전에 `weather_risk_assessment/contracts/medallion.py`의
+Spark 검증을 실행한다. 계약 위반이 있으면 잘못된 결과를 덮어쓰기 전에 작업을 실패시킨다.
+
+| 데이터셋 | 유일 키 | 주요 검사 |
+|---|---|---|
+| `silver_risk_enriched` | `nx, ny, fcstDate, fcstTime` | 실행 파티션과 예보시각, 6개 위험도 범위 |
+| `gold_risk_latest` | `admin_names` | 지역별 한 행, 예보시각, `R_total`과 위험등급 일치 |
+| `gold_risk_daily` | `date, admin_names` | 일별 한 행, 평균·최댓값 범위, 관측 건수와 최대 위험 시각 |
+
+모든 위험도 점수는 null 없이 0 이상 1 이하여야 한다. `gold_risk_latest`의 등급은
+`LOW`, `MED`, `HIGH`, `VERY_HIGH` 순서로 각각 0.4, 0.6, 0.8 경계를 사용한다.
+`gold_risk_daily`에서는 `r_total_max`가 `r_total_avg`보다 작을 수 없고 `obs_cnt`는
+양의 정수여야 한다. 같은 계약의 pandas 검증 함수로 Spark 없이도 회귀 테스트한다.

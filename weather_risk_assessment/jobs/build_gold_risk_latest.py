@@ -3,6 +3,8 @@ from pyspark.sql import SparkSession, functions as F
 from pyspark.sql.window import Window
 
 import os
+from weather_risk_assessment.contracts.medallion import validate_spark_frame
+
 BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 SILVER = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
 GOLD   = f"s3a://{BUCKET}/gold/risk_latest"
@@ -48,6 +50,8 @@ def main():
         "R_rain","R_heat","R_wind","R_uv","R_typhoon",
         "risk_level"
     )
+
+    validate_spark_frame("gold_risk_latest", out).raise_for_errors()
 
     (out.write.format("delta")
         .mode("overwrite")

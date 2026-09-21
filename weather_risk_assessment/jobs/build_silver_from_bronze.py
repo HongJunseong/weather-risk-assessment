@@ -32,6 +32,7 @@ from weather_risk_assessment.risk.typhoon_risk import compute_typhoon_risk
 from weather_risk_assessment.risk.wind_risk import compute_wind_risk
 from weather_risk_assessment.risk.uv_risk import compute_uv_risk
 from weather_risk_assessment.risk.config import compute_r_total
+from weather_risk_assessment.contracts.medallion import validate_spark_frame
 
 
 def s3_dt(dataset: str, run_dt: str) -> str:
@@ -228,6 +229,8 @@ def main():
             "fcst_ts",
             F.to_timestamp(F.concat_ws(" ", F.col("fcstDate"), F.col("fcstTime")), "yyyyMMdd HHmm")
         )
+
+    validate_spark_frame("silver_risk_enriched", df).raise_for_errors()
 
     # silver 저장 (Delta)
     (df.write
