@@ -17,6 +17,12 @@ python -m compileall -q weather_risk_assessment dags tests
 로컬 모듈 실행 시 환경변수를 미리 설정한다. `.env`는 Compose가 컨테이너에 주입하며,
 개별 Python 모듈이 자동으로 읽는 것으로 가정하지 않는다.
 
+단위·계약 테스트와 Spark Job import 테스트는 실제 API 키나 AWS 자격증명 없이 실행한다.
+KMA 수집과 S3 읽기·쓰기를 포함한 통합 테스트에서만 `.env`의 `KMA_API_KEY`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`,
+`S3_RISK_STREAM_BUCKET`을 사용한다. 알림 종단간 테스트에는 `SLACK_WEBHOOK_URL`이 추가로
+필요하다. 실제 값은 저장소에 커밋하지 않는다.
+
 ## Docker 실행
 
 ```bash
@@ -46,6 +52,8 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   로컬 수집 결과를 실행별 디렉터리로 분리했다.
 - 대표 KMA 응답 fixture와 Bronze 계약을 추가해 파일·스키마·키·시각 오류를 S3 업로드
   전에 차단한다.
+- Spark Job의 환경변수 조회와 SparkSession 생성을 실행 진입점으로 옮겼다. 명시적인
+  `file://` 입출력 경로를 넘기면 S3 환경변수 없이 로컬 Spark 실행도 가능하다.
 
 ## 후속 개선 우선순위
 
@@ -53,8 +61,7 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 2. Silver/Gold의 스키마, 위험도 범위, 지역·시각별 유일성 계약을 추가한다.
 3. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
    범위 밖에서는 원본 재수집이 불가능하므로 Bronze 보존·수명주기 정책을 정한다.
-4. 일부 Spark jobs는 import 시 SparkSession을 생성하고 S3 환경변수를 즉시 읽는다.
-   진입점으로 옮기고 Airflow DAG import 검증을 추가한다.
+4. Airflow DAG import 검증을 추가한다.
 5. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
    constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
 6. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.

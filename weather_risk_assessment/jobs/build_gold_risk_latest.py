@@ -1,64 +1,91 @@
 from __future__ import annotations
-from pyspark.sql import SparkSession, functions as F
-from pyspark.sql.window import Window
 
-import os
+import argparse
+from typing import Any
+
 from weather_risk_assessment.contracts.medallion import validate_spark_frame
-
-BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
-SILVER = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
-GOLD   = f"s3a://{BUCKET}/gold/risk_latest"
-
-spark = (
-    SparkSession.builder
-    .appName("build-gold-risk-latest")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate()
+from weather_risk_assessment.jobs.spark_runtime import (
+    create_spark_session,
+    resolve_storage_paths,
 )
 
-def main():
-    df = spark.read.format("delta").load(SILVER)
 
-    # fcst_ts가 없으면 생성
-    if "fcst_ts" not in df.columns and {"fcstDate","fcstTime"}.issubset(df.columns):
-        df = df.withColumn(
+def build_latest(frame: Any) -> Any:
+    """Select one latest forecast per administrative region."""
+    from pyspark.sql import functions as functions
+    from pyspark.sql.window import Window
+
+    if "fcst_ts" not in frame.columns and {"fcstDate", "fcstTime"}.issubset(
+        frame.columns
+    ):
+        frame = frame.withColumn(
             "fcst_ts",
-            F.to_timestamp(F.concat_ws(" ", F.col("fcstDate"), F.col("fcstTime")), "yyyyMMdd HHmm")
+            functions.to_timestamp(
+                functions.concat_ws(
+                    " ", functions.col("fcstDate"), functions.col("fcstTime")
+                ),
+                "yyyyMMdd HHmm",
+            ),
         )
 
-    # 지역키: admin_names 기준 최신 1개
-    w = Window.partitionBy("admin_names").orderBy(F.col("fcst_ts").desc_nulls_last())
-    latest = (
-        df.filter(F.col("admin_names").isNotNull())
-          .withColumn("rn", F.row_number().over(w))
-          .filter(F.col("rn") == 1)
-          .drop("rn")
+    window = Window.partitionBy("admin_names").orderBy(
+        functions.col("fcst_ts").desc_nulls_last()
     )
-
-    # 위험등급(원하면 임계값만 바꾸면 됨)
+    latest = (
+        frame.filter(functions.col("admin_names").isNotNull())
+        .withColumn("rn", functions.row_number().over(window))
+        .filter(functions.col("rn") == 1)
+        .drop("rn")
+    )
     latest = latest.withColumn(
         "risk_level",
-        F.when(F.col("R_total") >= 0.8, "VERY_HIGH")
-         .when(F.col("R_total") >= 0.6, "HIGH")
-         .when(F.col("R_total") >= 0.4, "MED")
-         .otherwise("LOW")
+        functions.when(functions.col("R_total") >= 0.8, "VERY_HIGH")
+        .when(functions.col("R_total") >= 0.6, "HIGH")
+        .when(functions.col("R_total") >= 0.4, "MED")
+        .otherwise("LOW"),
+    )
+    return latest.select(
+        "admin_names",
+        "fcst_ts",
+        "dt",
+        "R_total",
+        "R_rain",
+        "R_heat",
+        "R_wind",
+        "R_uv",
+        "R_typhoon",
+        "risk_level",
     )
 
-    out = latest.select(
-        "admin_names","fcst_ts","dt","R_total",
-        "R_rain","R_heat","R_wind","R_uv","R_typhoon",
-        "risk_level"
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bucket", default="")
+    parser.add_argument("--silver", default="")
+    parser.add_argument("--gold", default="")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    paths = resolve_storage_paths(
+        args.bucket,
+        {"silver": args.silver, "gold": args.gold},
+        {
+            "silver": ("silver/kma_wide/risk_enriched",),
+            "gold": ("gold/risk_latest",),
+        },
     )
+    spark = create_spark_session("build-gold-risk-latest")
 
-    validate_spark_frame("gold_risk_latest", out).raise_for_errors()
+    try:
+        output = build_latest(spark.read.format("delta").load(paths["silver"]))
+        validate_spark_frame("gold_risk_latest", output).raise_for_errors()
+        output.write.format("delta").mode("overwrite").save(paths["gold"])
+        print(f"[OK] gold wrote: {paths['gold']}", flush=True)
+    finally:
+        spark.stop()
 
-    (out.write.format("delta")
-        .mode("overwrite")
-        .save(GOLD))
-
-    print(f"[OK] gold wrote: {GOLD}", flush=True)
 
 if __name__ == "__main__":
     main()
-    spark.stop()

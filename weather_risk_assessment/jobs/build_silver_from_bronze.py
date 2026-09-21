@@ -2,22 +2,16 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
+from typing import Any
 
 import pandas as pd
-from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, StringType, IntegerType, DoubleType, TimestampType
+
+from weather_risk_assessment.jobs.spark_runtime import (
+    create_spark_session,
+    resolve_storage_paths,
 )
-
-import os
 from weather_risk_assessment.utils.run_time import normalize_run_dt
-BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 BRONZE_PREFIX = "bronze/kma"
-
-# silver base (너가 말한 경로 기준) + 결과는 risk_enriched로 분리 추천
-SILVER_OUT = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
 
 # admin map (컨테이너/리포에 실제 존재하는 경로로 맞춰)
 from weather_risk_assessment.paths import DATA_ROOT
@@ -35,11 +29,11 @@ from weather_risk_assessment.risk.config import compute_r_total
 from weather_risk_assessment.contracts.medallion import validate_spark_frame
 
 
-def s3_dt(dataset: str, run_dt: str) -> str:
-    return f"s3a://{BUCKET}/{BRONZE_PREFIX}/{dataset}/dt={run_dt}/"
+def dataset_run_path(bronze_root: str, dataset: str, run_dt: str) -> str:
+    return f"{bronze_root.rstrip('/')}/{dataset}/dt={run_dt}/"
 
 
-def read_parquet_dir(spark: SparkSession, path: str) -> DataFrame | None:
+def read_parquet_dir(spark: Any, path: str) -> Any | None:
     try:
         return spark.read.parquet(path)
     except Exception as e:
@@ -53,7 +47,9 @@ NUM_COLS = [
     "TY_DISTANCE_KM","TY_MAX_WIND","TY_WARNING"
 ]
 
-def canon(df: DataFrame) -> DataFrame:
+def canon(df: Any) -> Any:
+    from pyspark.sql import functions as F
+
     if "nx" in df.columns: df = df.withColumn("nx", F.col("nx").cast("int"))
     if "ny" in df.columns: df = df.withColumn("ny", F.col("ny").cast("int"))
 
@@ -75,7 +71,9 @@ def canon(df: DataFrame) -> DataFrame:
     return df
 
 
-def safe_join(base: DataFrame, right: DataFrame | None, keep_cols: list[str], suffix: str) -> DataFrame:
+def safe_join(base: Any, right: Any | None, keep_cols: list[str], suffix: str) -> Any:
+    from pyspark.sql import functions as F
+
     if right is None:
         return base
 
@@ -104,7 +102,9 @@ def safe_join(base: DataFrame, right: DataFrame | None, keep_cols: list[str], su
     return out
 
 
-def attach_admin_names(spark: SparkSession, df: DataFrame, admin_map_path: str) -> DataFrame:
+def attach_admin_names(spark: Any, df: Any, admin_map_path: str) -> Any:
+    from pyspark.sql import functions as F
+
     # admin_centroids.csv: nx, ny, admin_name 컬럼 가정
     adm = spark.read.option("header", True).csv(admin_map_path)
 
@@ -129,11 +129,13 @@ def attach_admin_names(spark: SparkSession, df: DataFrame, admin_map_path: str) 
     return df.join(adm_list, on=["nx", "ny"], how="left")
 
 
-def add_risks_map_in_pandas(df: DataFrame) -> DataFrame:
+def add_risks_map_in_pandas(df: Any) -> Any:
     """
     pandas 기반 compute_*_risk를 Spark에 안전하게 붙이는 방법:
     - mapInPandas로 파티션 단위 pandas DF를 받아서 계산 후 반환
     """
+    from pyspark.sql.types import DoubleType, StructField, StructType
+
     # 기존 컬럼 스키마 + 위험도 6개 추가
     base_fields = []
     for f in df.schema.fields:
@@ -168,79 +170,109 @@ def add_risks_map_in_pandas(df: DataFrame) -> DataFrame:
     return df.mapInPandas(_calc, schema=out_schema)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--run_dt", default="", help="YYYYMMDDHH. 비우면 KST 현재시각으로 자동")
-    parser.add_argument("--mode", default="overwrite", choices=["overwrite", "append"])
-    parser.add_argument("--silver_out", default=SILVER_OUT)
-    parser.add_argument("--admin_map", default=DEFAULT_ADMIN_MAP)
-    args = parser.parse_args()
+def build_silver_frame(
+    spark: Any, bronze_root: str, run_dt: str, admin_map_path: str
+) -> Any:
+    from pyspark.sql import functions as F
 
-    run_dt = normalize_run_dt(args.run_dt)
-
-    spark = (
-        SparkSession.builder
-        .appName("build-silver-risk-enriched-from-bronze")
-        .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .getOrCreate()
+    df = read_parquet_dir(
+        spark, dataset_run_path(bronze_root, "ultra_shortfcst", run_dt)
     )
-
-    # base = ultra_shortfcst
-    df = read_parquet_dir(spark, s3_dt("ultra_shortfcst", run_dt))
     if df is None:
-        raise SystemExit(f"[FATAL] ultra_shortfcst bronze not found on S3 for dt={run_dt}")
+        raise SystemExit(
+            f"[FATAL] ultra_shortfcst bronze not found on S3 for dt={run_dt}"
+        )
     df = canon(df)
 
-    df_nc  = read_parquet_dir(spark, s3_dt("ultra_nowcast", run_dt))
-    df_vil = read_parquet_dir(spark, s3_dt("short_fcst", run_dt))
-    df_ty  = read_parquet_dir(spark, s3_dt("typhoon", run_dt))
-    df_uv  = read_parquet_dir(spark, s3_dt("uv", run_dt))
+    df_nc = read_parquet_dir(
+        spark, dataset_run_path(bronze_root, "ultra_nowcast", run_dt)
+    )
+    df_vil = read_parquet_dir(
+        spark, dataset_run_path(bronze_root, "short_fcst", run_dt)
+    )
+    df_ty = read_parquet_dir(
+        spark, dataset_run_path(bronze_root, "typhoon", run_dt)
+    )
+    df_uv = read_parquet_dir(
+        spark, dataset_run_path(bronze_root, "uv", run_dt)
+    )
 
-    df_nc  = canon(df_nc)  if df_nc  is not None else None
+    df_nc = canon(df_nc) if df_nc is not None else None
     df_vil = canon(df_vil) if df_vil is not None else None
-    df_ty  = canon(df_ty)  if df_ty  is not None else None
-    df_uv  = canon(df_uv)  if df_uv  is not None else None
+    df_ty = canon(df_ty) if df_ty is not None else None
+    df_uv = canon(df_uv) if df_uv is not None else None
 
-    # compute_risk.py와 같은 “의미”로 병합
-    df = safe_join(df, df_nc,  ["RN1","REH","T1H","UUU","VVV","WSD","PTY","SKY","VEC"], "_nc")
-    df = safe_join(df, df_vil, ["PCP","POP","WSD"], "_vil")
-    df = safe_join(df, df_ty,  ["TY_DISTANCE_KM","TY_MAX_WIND","TY_WARNING"], "_ty")
-    df = safe_join(df, df_uv,  ["UVI","UV_INDEX"], "_uv")
+    df = safe_join(
+        df,
+        df_nc,
+        ["RN1", "REH", "T1H", "UUU", "VVV", "WSD", "PTY", "SKY", "VEC"],
+        "_nc",
+    )
+    df = safe_join(df, df_vil, ["PCP", "POP", "WSD"], "_vil")
+    df = safe_join(
+        df, df_ty, ["TY_DISTANCE_KM", "TY_MAX_WIND", "TY_WARNING"], "_ty"
+    )
+    df = safe_join(df, df_uv, ["UVI", "UV_INDEX"], "_uv")
 
-    # 부가 컬럼
     df = df.withColumn("dt", F.lit(run_dt))
     df = df.withColumn("ingested_at", F.current_timestamp())
-
-    # 중복 제거
     if set(KEYS).issubset(df.columns):
         df = df.dropDuplicates(KEYS)
 
-    # admin_names 붙이기
-    df = attach_admin_names(spark, df, args.admin_map)
-
-    # 위험도 계산 붙이기 (R_* + R_total 생성)
-    df = df.repartition(4)
-    df = add_risks_map_in_pandas(df)
-
-    # fcst_ts 생성 (gold에서 쓰기 편하게)
-    if "fcstDate" in df.columns and "fcstTime" in df.columns:
+    df = attach_admin_names(spark, df, admin_map_path)
+    df = add_risks_map_in_pandas(df.repartition(4))
+    if {"fcstDate", "fcstTime"}.issubset(df.columns):
         df = df.withColumn(
             "fcst_ts",
-            F.to_timestamp(F.concat_ws(" ", F.col("fcstDate"), F.col("fcstTime")), "yyyyMMdd HHmm")
+            F.to_timestamp(
+                F.concat_ws(" ", F.col("fcstDate"), F.col("fcstTime")),
+                "yyyyMMdd HHmm",
+            ),
         )
+    return df
 
-    validate_spark_frame("silver_risk_enriched", df).raise_for_errors()
 
-    # silver 저장 (Delta)
-    (df.write
-      .format("delta")
-      .mode(args.mode)
-      .partitionBy("dt")
-      .save(args.silver_out))
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run_dt", default="", help="YYYYMMDDHH. 비우면 KST 현재시각으로 자동")
+    parser.add_argument("--mode", default="overwrite", choices=["overwrite", "append"])
+    parser.add_argument("--bucket", default="")
+    parser.add_argument("--bronze_root", default="")
+    parser.add_argument("--silver_out", default="")
+    parser.add_argument("--admin_map", default=DEFAULT_ADMIN_MAP)
+    return parser.parse_args(argv)
 
-    print(f"[OK] silver risk_enriched wrote: {args.silver_out} dt={run_dt}", flush=True)
-    spark.stop()
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+
+    run_dt = normalize_run_dt(args.run_dt)
+    paths = resolve_storage_paths(
+        args.bucket,
+        {"bronze_root": args.bronze_root, "silver_out": args.silver_out},
+        {
+            "bronze_root": (BRONZE_PREFIX,),
+            "silver_out": ("silver/kma_wide/risk_enriched",),
+        },
+    )
+    spark = create_spark_session("build-silver-risk-enriched-from-bronze")
+    try:
+        output = build_silver_frame(
+            spark, paths["bronze_root"], run_dt, args.admin_map
+        )
+        validate_spark_frame("silver_risk_enriched", output).raise_for_errors()
+        (
+            output.write.format("delta")
+            .mode(args.mode)
+            .partitionBy("dt")
+            .save(paths["silver_out"])
+        )
+        print(
+            f"[OK] silver risk_enriched wrote: {paths['silver_out']} dt={run_dt}",
+            flush=True,
+        )
+    finally:
+        spark.stop()
 
 
 if __name__ == "__main__":
