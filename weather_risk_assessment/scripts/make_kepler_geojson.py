@@ -4,8 +4,7 @@ from pathlib import Path
 import json
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
+from weather_risk_assessment.paths import DATA_ROOT as DATA
 
 def main():
     # 최신 위험도와 행정구역 중심점 로드

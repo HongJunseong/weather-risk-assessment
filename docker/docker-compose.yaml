@@ -48,7 +48,8 @@ x-airflow-common:
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
   # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.5.1}
   build:
-    dockerfile: Dockerfile
+    context: ..
+    dockerfile: docker/Dockerfile
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -67,9 +68,10 @@ x-airflow-common:
     AIRFLOW__WEBSERVER__SECRET_KEY: my_super_secret_key
 
     PYTHONPATH: /opt/airflow/src
+    WEATHER_DATA_DIR: /opt/airflow/data
 
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
-  user: "1000:0"
+  user: "${AIRFLOW_UID:-1000}:0"
   depends_on:
     &airflow-common-depends-on
     redis:
@@ -125,6 +127,7 @@ services:
     volumes:
       - ../dags:/opt/airflow/dags
       - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
+      - ../data:/opt/airflow/data
     env_file:
       - ../.env
 
@@ -147,6 +150,7 @@ services:
     volumes:
       - ../dags:/opt/airflow/dags
       - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
+      - ../data:/opt/airflow/data
     env_file:
       - ../.env
 
@@ -184,6 +188,7 @@ services:
     volumes:
       - ../dags:/opt/airflow/dags
       - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
+      - ../data:/opt/airflow/data
     ports:
       - 8793:8793
     env_file:
@@ -206,6 +211,7 @@ services:
     volumes:
       - ../dags:/opt/airflow/dags
       - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
+      - ../data:/opt/airflow/data
     env_file:
       - ../.env
 
@@ -288,6 +294,7 @@ services:
       - ..:/sources
       - ../dags:/opt/airflow/dags
       - ../weather_risk_assessment:/opt/airflow/src/weather_risk_assessment
+      - ../data:/opt/airflow/data
     env_file:
       - ../.env
 

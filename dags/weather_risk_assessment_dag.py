@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import pendulum
-from datetime import timedelta
 
 from airflow import DAG
 from airflow.decorators import task
@@ -13,16 +12,13 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from weather_risk_assessment.scripts.upload_bronze_to_s3 import main as upload_bronze_main
 
-import sys
-# ===== 프로젝트 루트 & 데이터 경로 =====
-PROJECT_ROOT = "/opt/airflow"  # 네 실제 프로젝트 경로
+from weather_risk_assessment.paths import DATA_ROOT, SINK_DIR
+import weather_risk_assessment
 
-SILVER_RISK_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_silver_from_bronze.py"
-GOLD_LATEST_JOB = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_latest.py"
-GOLD_DAILY_JOB  = f"{PROJECT_ROOT}/src/weather_risk_assessment/jobs/build_gold_risk_daily.py"
-DATA_ROOT = Path(PROJECT_ROOT) / "src" / "weather_risk_assessment" / "data"
-DATA_ROOT.mkdir(parents=True, exist_ok=True)
-SINK_DIR = Path(os.getenv("DRE_SINK_DIR", (DATA_ROOT / "live").as_posix()))
+JOB_ROOT = Path(weather_risk_assessment.__file__).resolve().parent / "jobs"
+SILVER_RISK_JOB = JOB_ROOT / "build_silver_from_bronze.py"
+GOLD_LATEST_JOB = JOB_ROOT / "build_gold_risk_latest.py"
+GOLD_DAILY_JOB = JOB_ROOT / "build_gold_risk_daily.py"
 
 KST = pendulum.timezone("Asia/Seoul")
 
@@ -48,7 +44,6 @@ os.environ.setdefault("KMA_LOG_LEVEL", "WARNING")
 # ===== Scripts =====
 from weather_risk_assessment.scripts.build_admin_centroids_from_shp import main as make_admin_centroids_main
 from weather_risk_assessment.scripts.make_admin_list import main as make_admin_list_main
-from weather_risk_assessment.scripts.make_kepler_geojson import main as make_geojson_main
 
 
 # ===== Collectors =====
@@ -64,8 +59,8 @@ import logging
 # --- Tableau (선택적 사용) ---
 # csv_to_hyper / publish_overwrite 태스크를 활성화하려면
 # TABLEAU_* 환경변수를 .env에 설정하고 DAG 하단 주석을 해제하세요.
-CSV_PATH   = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.csv"
-HYPER_PATH = "/opt/airflow/src/weather_risk_assessment/data/risk_latest.hyper"
+CSV_PATH = str(DATA_ROOT / "risk_latest.csv")
+HYPER_PATH = str(DATA_ROOT / "risk_latest.hyper")
 
 
 
@@ -86,7 +81,8 @@ with DAG(
     tags=["weather","kma","risk"],
 ) as dag:
 
-    RUN_DT = "{{ logical_date.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
+    RUN_DT = "{{ data_interval_start.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
+    RUN_DIR = f"{SINK_DIR}/dt={RUN_DT}"
     
     # 1) 행정 구역 중심점 생성 (lat, lon)
     t_make_admin_centroids = PythonOperator(
@@ -106,8 +102,9 @@ with DAG(
         python_callable=collect_run_once,
         op_kwargs={
             "admin_csv": (DATA_ROOT/"unique_admin_centroids.csv").as_posix(),
-            "out_dir": SINK_DIR.as_posix(),
+            "out_dir": RUN_DIR,
             "sample_n": 0,
+            "run_dt": RUN_DT,
         },
     )
 
@@ -116,23 +113,30 @@ with DAG(
         python_callable=collect_short_fcst,
         op_kwargs={
             "call_list_csv": DATA_ROOT / "unique_admin_centroids.csv",
-            "out_path":      SINK_DIR / "short_fcst.parquet",
+            "out_path": f"{RUN_DIR}/short_fcst.parquet",
+            "run_dt": RUN_DT,
         },
     )
 
     # 5) typhoon collector
     @task(task_id="collect_typhoon_forecast_wide")
-    def collect_typhoon_forecast_wide():
-        out = fetch_typhoon_forecast_wide(out_path = SINK_DIR / "typhoon.parquet"
-                                          ,grid_path = DATA_ROOT / "grid_latlon.parquet")  # compute_risk_wide는 여기서 읽음
+    def collect_typhoon_forecast_wide(run_dt: str, run_dir: str):
+        out = fetch_typhoon_forecast_wide(out_path = f"{run_dir}/typhoon.parquet"
+                                          ,grid_path = DATA_ROOT / "grid_latlon.parquet"
+                                          ,run_dt = run_dt
+                                          ,source_dir = run_dir)  # compute_risk_wide는 여기서 읽음
         return str(out)
 
     # 6) uv collector
     @task(task_id="collect_uv_wide")
-    def collect_uv_wide():
+    def collect_uv_wide(run_dt: str, run_dir: str):
         # UV API 실패 시 초단기/단기 parquet을 사용해 추정하므로,
         # nowcast/shortfcst 이후에 실행되어야 함
-        out = fetch_and_save_uv_wide(out_path=SINK_DIR / "uv.parquet")
+        out = fetch_and_save_uv_wide(
+            out_path=Path(run_dir) / "uv.parquet",
+            run_dt=run_dt,
+            source_dir=Path(run_dir),
+        )
         return str(out)
 
     # 7 Bronze 업로드 (수집된 원천 parquet들을 S3 bronze로)
@@ -140,12 +144,12 @@ with DAG(
         task_id="upload_bronze_to_s3",
         python_callable=upload_bronze_main,
         op_kwargs={
-            "run_dt": "{{ data_interval_start.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
+            "run_dt": RUN_DT,
+            "sink_dir": RUN_DIR,
         },
     )
 
     # 8) Silver 변환 (S3 bronze -> S3 silver/risk_features Delta)
-    SILVER_DELTA_PATH = "s3a://junseong-weather-risk-stream/silver/kma_wide"
 
     t_build_silver = BashOperator(
         task_id="build_silver_risk_enriched",
@@ -170,17 +174,10 @@ with DAG(
         ),
     )
 
-    # 11) GeoJSON
-    t_geojson = PythonOperator(
-        task_id="make_geojson",
-        python_callable=make_geojson_main,
-        op_kwargs={"run_dir": SINK_DIR.as_posix()},
-    )
-
     export_gold_parquet = BashOperator(
         task_id="export_gold_parquet",
         bash_command=(
-            f'{SPARK_SUBMIT} {PROJECT_ROOT}/src/weather_risk_assessment/jobs/export_gold_parquet.py'
+            f"{SPARK_SUBMIT} {JOB_ROOT / 'export_gold_parquet.py'}"
         ),
     )
 
@@ -252,15 +249,15 @@ with DAG(
         finally:
             server.auth.sign_out()
 
-    # HIGH 이상 지역 Kafka 알림
+    # HIGH 이상 지역 Slack 알림 (기존 task_id는 실행 이력 호환을 위해 유지)
     t_send_alerts = PythonOperator(
         task_id="send_high_risk_alerts_to_kafka",
         python_callable=send_high_risk_alerts,
     )
 
     # ===== DAG Task 연결 =====
-    typhoon_task  = collect_typhoon_forecast_wide()
-    uv_task = collect_uv_wide()
+    typhoon_task = collect_typhoon_forecast_wide(RUN_DT, RUN_DIR)
+    uv_task = collect_uv_wide(RUN_DT, RUN_DIR)
 
     # Hyper 변환 및 개시할 때 사용
     # hyper = csv_to_hyper()
@@ -268,4 +265,4 @@ with DAG(
 
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
     >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
-    >> build_gold_risk_daily >> export_gold_parquet >> t_geojson >> t_send_alerts # >> hyper >> pub
+    >> build_gold_risk_daily >> export_gold_parquet >> t_send_alerts # >> hyper >> pub

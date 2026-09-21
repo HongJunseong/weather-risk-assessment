@@ -9,9 +9,16 @@
 ![tableau](https://img.shields.io/badge/Tableau-Visualization-E97627)
 ![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
 
-> **요약**: 기상청(KMA) API를 1시간 주기로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, **Tableau · kepler.gl을 통한 시각화를 선택적으로 연계**할 수 있습니다.
+> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, **Tableau · kepler.gl을 통한 시각화를 선택적으로 연계**할 수 있습니다.
 
 ---
+
+## 유지보수 문서
+
+- [폴더 구조와 데이터 경로](docs/architecture.md)
+- [개발 환경·운영 안내·점검 결과](docs/maintenance.md)
+- [Bronze 데이터 계약](docs/data-contracts.md)
+- [AI 작업 지침](AGENTS.md)
 
 ## 프로젝트 개요
 
@@ -25,13 +32,13 @@
 
 기상청(KMA)은 초단기/단기예보, 생활기상지수(UV), 태풍 정보 등 다양한 지표를 공개하지만, 각 지표는 포맷과 단위가 제각각이고 시간축도 다르게 제공됩니다. **지표를 종합해 한눈에 비교 가능한 '지역별 위험도'로 해석**하기 어렵고, 실무자는 매번 데이터를 풀어서 읽고 조합해야 하는 부담이 있습니다.
 
-본 프로젝트는 **1시간 주기 수집 → 위험도 산출 → S3 Delta Lake 적재 → 위험 지역 자동 알림 → 시각화**로 이어지는 흐름을 통해 즉시 활용 가능한 위험도 정보를 제공하는 것을 목표로 합니다.
+본 프로젝트는 **수집 → 위험도 산출 → S3 Delta Lake 적재 → 위험 지역 자동 알림 → 시각화**로 이어지는 흐름을 통해 즉시 활용 가능한 위험도 정보를 제공하는 것을 목표로 합니다.
 
 ---
 
 ## 프로젝트 내용 요약
 
-- **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 1시간 주기로 데이터를 수집하고 원천 데이터를 표준 스키마로 정제
+- **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 데이터를 수집하고 원천 데이터를 표준 스키마로 정제
 - **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선, 바람 등 지표별 위험도 계산 함수를 개발하고, 가중합과 최고값 기반으로 종합 위험도(`R_total`) 산출. 가중치는 `risk/config.py` 단일 파일에서 중앙 관리
 - **Medallion Architecture**: 수집 데이터를 AWS S3 Delta Lake에 Bronze(원천) → Silver(정제·위험도) → Gold(집계·최신) 단계로 누적 저장하여 원천 보존과 단계별 재처리(backfill) 가능
 - **Spark 기반 데이터 처리**: Silver/Gold 단계 변환 및 집계를 PySpark로 처리. `mapInPandas`를 활용해 기존 pandas 기반 위험도 함수를 Spark 파이프라인에 통합
@@ -67,7 +74,7 @@
 
 ```mermaid
 flowchart LR
-  A["KMA API<br>1시간 주기 수집"] --> B["Airflow<br>Orchestration"]
+  A["KMA API<br>수동 실행 수집"] --> B["Airflow<br>Orchestration"]
   B --> C["Bronze<br>S3 Delta Lake<br>원천 데이터"]
   C --> D["Spark<br>Silver Transform"]
   D --> E["Silver<br>S3 Delta Lake<br>정제 + 위험도"]
@@ -78,8 +85,8 @@ flowchart LR
   H --> S["Slack<br>위험 지역 자동 알림"]
 ```
 
-- **Airflow DAG**: 1시간 주기 실행, 오류 시 자동 재시도(백오프)
-- **타임존**: `Asia/Seoul`(KST) 기준 스케줄링
+- **Airflow DAG**: 현재 수동 실행(`schedule=None`), 태스크 재시도 없음(`retries=0`)
+- **타임존**: `Asia/Seoul`(KST) 기준 시각 처리
 - **Slack 알림**: HIGH(`≥0.6`) / VERY_HIGH(`≥0.8`) 지역 감지 시 자동 전송
 
 ---
@@ -109,7 +116,7 @@ Export된 Parquet을 Tableau에 연결하여 사용합니다. DAG의 `csv_to_hyp
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
 
 ### kepler.gl *(선택적 연계)*
-Export된 Parquet을 kepler.gl에 드래그&드롭하여 즉시 시각화할 수 있습니다.
+kepler.gl 연계에는 좌표가 포함된 데이터가 필요합니다. 현재 S3 Export에는 좌표가 없으므로 별도 입력 준비가 필요합니다.
 
 - 행정구역 중심 좌표 기반 **지리 공간 시각화**
 - 전국 위험도 분포를 지도 위에서 직관적으로 확인
@@ -126,7 +133,7 @@ Export된 Parquet을 kepler.gl에 드래그&드롭하여 즉시 시각화할 수
 | 초단기/단기/UV 기준시각 불일치로 시간축 충돌 | `pendulum`으로 KST 고정, 라운딩·정렬 규칙 정의, 결측 보정 | 시간 정렬 버그 제거 |
 | 행정구역 좌표(Nx, Ny) 중복·충돌로 조인 불안정 | `admin_centroids.csv` 정제 + 중심점 중복 제거 함수로 좌표 매핑 고정 | 조인 키 일관성 확보 |
 | 지표 단위·스케일 불일치 (UV·강수·풍속·태풍 혼재) | 지표별 위험도 함수 구현 후 가중합으로 `R_total` 산출. 가중치를 `risk/config.py`에 중앙화하여 Spark/로컬 경로 모두 단일 소스 공유 | 지표 일관성 확보, 유지보수성 향상 |
-| Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화·의존 최소화, 재시도/백오프, 네트워크 타임아웃 설정 | 간헐적 API 장애에도 파이프라인 복원력 향상 |
+| Airflow 태스크 부분 실패가 전체 DAG 실패로 전파 | 태스크 세분화, 일부 수집기의 요청 재시도, 네트워크 타임아웃 설정 | 간헐적 API 장애에도 파이프라인 복원력 향상 |
 | 위험 상황 인지 지연 | 파이프라인 완료 후 `R_total ≥ 0.6` 지역을 감지해 Slack Webhook으로 자동 알림 | 위험 발생 즉시 담당자 인지 가능 |
 | Spark에서 S3 Delta Lake 연동 설정 복잡 | `hadoop-aws`, `aws-java-sdk-bundle` 패키지 버전 충돌 해결 및 `spark.sql.extensions`, `spark.sql.catalog` 등 Delta 관련 conf를 `spark-submit` 옵션으로 통일하여 DAG에서 일관되게 관리 | S3 Delta Lake 읽기/쓰기 안정화 |
 
@@ -164,8 +171,8 @@ cp .env.example .env
 # .env 파일에 KMA_API_KEY, AWS 키, S3 버킷명, Slack Webhook URL 입력
 
 # 3) Airflow 컨테이너 실행
-cd docker
-docker compose up -d
+unzip data/border/N3A_G0100000.zip -d data/border
+docker compose --env-file .env -f docker/docker-compose.yaml up -d --build
 
 # 4) Airflow UI 접속
 # http://localhost:8080  (ID: airflow / PW: airflow)

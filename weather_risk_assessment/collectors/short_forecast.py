@@ -14,10 +14,9 @@ from urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------------- paths & env ----------------
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
-LIVE = DATA / "live"
-LIVE.mkdir(parents=True, exist_ok=True)
+from weather_risk_assessment.paths import DATA_ROOT as DATA, SINK_DIR
+from weather_risk_assessment.utils.run_time import resolve_run_time
+LIVE = SINK_DIR
 
 CALL_LIST   = DATA / "unique_admin_centroids.csv"   # columns: nx,ny[,admin_code|areaNo]
 DEFAULT_OUT = LIVE / "short_fcst.parquet"
@@ -161,10 +160,13 @@ def _postprocess_wide(df_raw: pd.DataFrame, admin_code: Optional[int]) -> pd.Dat
     if df_raw.empty:
         return pd.DataFrame()
     df = df_raw[df_raw["category"].isin(CATEGORIES)].copy()
-    df["value"] = df["fcstValue"]
     pcp_mask = df["category"].eq("PCP")
-    df.loc[pcp_mask, "value"] = df.loc[pcp_mask, "value"].map(_pcp_to_float)
-    df.loc[~pcp_mask, "value"] = pd.to_numeric(df.loc[~pcp_mask, "value"], errors="coerce")
+    values = pd.Series(index=df.index, dtype="float64")
+    values.loc[pcp_mask] = df.loc[pcp_mask, "fcstValue"].map(_pcp_to_float)
+    values.loc[~pcp_mask] = pd.to_numeric(
+        df.loc[~pcp_mask, "fcstValue"], errors="coerce"
+    )
+    df["value"] = values
 
     idx_cols = ["nx", "ny", "fcstDate", "fcstTime"]
     df_pvt = (df.pivot_table(index=idx_cols, columns="category", values="value", aggfunc="mean")
@@ -252,7 +254,8 @@ def _fetch_vilage_singlepage(nx: int, ny: int, baseDate: str, baseTime: str) -> 
 # ---------------- main collector ----------------
 def collect_short_fcst(call_list_csv: Path = CALL_LIST,
                        out_path: Path = DEFAULT_OUT,
-                       categories: Optional[List[str]] = None) -> str:
+                       categories: Optional[List[str]] = None,
+                       run_dt: str | None = None) -> str:
     """
     여러 지점을 병렬 수집하여 +H시간(기본 6h)만 wide parquet 저장.
     """
@@ -269,7 +272,7 @@ def collect_short_fcst(call_list_csv: Path = CALL_LIST,
     if not req_cols.issubset(cl.columns):
         raise ValueError(f"call_list.csv에 nx, ny 컬럼이 필요합니다. got={cl.columns.tolist()}")
 
-    now_kst = pendulum.now("Asia/Seoul")
+    now_kst = resolve_run_time(run_dt)
     baseDate, baseTime = _latest_issue_time(now_kst)
 
     # 타깃 +Hh 시각 프레임(조인용): now 정시와 정렬되도록 시작

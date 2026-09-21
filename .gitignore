@@ -24,10 +24,11 @@ docker-compose.override.yml
 
 # Data
 # 수집 데이터 (parquet, csv 등)
-weather_risk_assessment/data/live/
-weather_risk_assessment/data/*.parquet
-weather_risk_assessment/data/*.csv
-weather_risk_assessment/data/*.geojson
+data/live/
+data/*.parquet
+data/*.csv
+data/*.geojson
+data/border/*.zip
 
 # GIS files
 *.dbf
@@ -43,8 +44,15 @@ weather_risk_assessment/data/*.geojson
 .DS_Store
 Thumbs.db
 
-# .sh files 
-*.sh
 
 # claude
 CLAUDE.md
+# Generated artifacts and Python tooling
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+data/*.hyper
+*:Zone.Identifier

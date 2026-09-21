@@ -4,8 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
+from weather_risk_assessment.paths import DATA_ROOT as DATA
 SRC  = DATA / "admin_centroids.csv"           # 입력: 행정구역 중심점
 DST  = DATA / "unique_admin_centroids.csv"    # 출력: 호출용 고유 (nx,ny) 목록
 GRID = DATA / "grid_latlon.parquet"           # 추가 출력: 태풍 계산용 격자(lat/lon 포함)

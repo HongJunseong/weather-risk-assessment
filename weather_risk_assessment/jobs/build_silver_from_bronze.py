@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
-import pendulum
 
 import pandas as pd
 from pyspark.sql import SparkSession, DataFrame
@@ -13,6 +12,7 @@ from pyspark.sql.types import (
 )
 
 import os
+from weather_risk_assessment.utils.run_time import normalize_run_dt
 BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
 BRONZE_PREFIX = "bronze/kma"
 
@@ -20,7 +20,8 @@ BRONZE_PREFIX = "bronze/kma"
 SILVER_OUT = f"s3a://{BUCKET}/silver/kma_wide/risk_enriched"
 
 # admin map (컨테이너/리포에 실제 존재하는 경로로 맞춰)
-DEFAULT_ADMIN_MAP = "/opt/***/src/weather_risk_assessment/data/admin_centroids.csv"
+from weather_risk_assessment.paths import DATA_ROOT
+DEFAULT_ADMIN_MAP = str(DATA_ROOT / "admin_centroids.csv")
 
 KEYS = ["nx", "ny", "fcstDate", "fcstTime"]
 
@@ -31,11 +32,6 @@ from weather_risk_assessment.risk.typhoon_risk import compute_typhoon_risk
 from weather_risk_assessment.risk.wind_risk import compute_wind_risk
 from weather_risk_assessment.risk.uv_risk import compute_uv_risk
 from weather_risk_assessment.risk.config import compute_r_total
-
-
-def now_run_dt_kst() -> str:
-    # YYYYMMDDHH (KST)
-    return pendulum.now("Asia/Seoul").format("YYYYMMDDHH")
 
 
 def s3_dt(dataset: str, run_dt: str) -> str:
@@ -179,7 +175,7 @@ def main():
     parser.add_argument("--admin_map", default=DEFAULT_ADMIN_MAP)
     args = parser.parse_args()
 
-    run_dt = args.run_dt.strip() or now_run_dt_kst()
+    run_dt = normalize_run_dt(args.run_dt)
 
     spark = (
         SparkSession.builder

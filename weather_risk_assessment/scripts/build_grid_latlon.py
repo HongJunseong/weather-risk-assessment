@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
+from weather_risk_assessment.paths import DATA_ROOT as DATA
 
 def main():
     # admin_centroids.csv -> (nx,ny,lat,lon) unique grid

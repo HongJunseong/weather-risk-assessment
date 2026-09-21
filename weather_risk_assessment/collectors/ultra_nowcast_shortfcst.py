@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import sys
 import time
 import logging
 from pathlib import Path
@@ -11,20 +10,14 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import requests
-from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm import tqdm
 
-# 루트 경로 추가 + .env 로드
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-load_dotenv(ROOT / ".env")
-
-from utils.latlon_to_grid import latlon_to_grid
-from utils.time_kst import now_kst
+from weather_risk_assessment.paths import DATA_ROOT, SINK_DIR
+from weather_risk_assessment.utils.latlon_to_grid import latlon_to_grid
+from weather_risk_assessment.utils.run_time import resolve_run_time
 
 # 불필요한 requests 로그 끔
 logging.getLogger("urllib3").setLevel(logging.ERROR)
@@ -83,7 +76,7 @@ def _parse_response(r: requests.Response):
 
 # baseDate/baseTime 후보 (실황)
 def _iter_ncst_candidates(now: datetime | None = None, tries: int = 4) -> Iterable[Tuple[str, str]]:
-    now = now or now_kst()
+    now = now or resolve_run_time()
     t = now.replace(minute=0, second=0, microsecond=0)
     if now.minute < 10:
         t -= timedelta(hours=1)
@@ -93,7 +86,7 @@ def _iter_ncst_candidates(now: datetime | None = None, tries: int = 4) -> Iterab
 
 # baseDate/baseTime 후보 (예보)
 def _iter_fcst_candidates(now: datetime | None = None, tries: int = 4) -> Iterable[Tuple[str, str]]:
-    now = now or now_kst()
+    now = now or resolve_run_time()
     t = now.replace(minute=30, second=0, microsecond=0)
     if now.minute < 45:
         t -= timedelta(hours=1)
@@ -141,9 +134,19 @@ def _ensure_coords(df: pd.DataFrame, nx: int, ny: int) -> pd.DataFrame:
     return df
 
 # 초단기실황 조회
-def fetch_ultra_srt_nc(nx: int, ny: int, base_date: str | None = None, base_time: str | None = None) -> pd.DataFrame:
+def fetch_ultra_srt_nc(
+    nx: int,
+    ny: int,
+    base_date: str | None = None,
+    base_time: str | None = None,
+    reference_time: datetime | None = None,
+) -> pd.DataFrame:
     url = build_url(EP_NCST)
-    candidates = [(base_date, base_time)] if (base_date and base_time) else _iter_ncst_candidates()
+    candidates = (
+        [(base_date, base_time)]
+        if (base_date and base_time)
+        else _iter_ncst_candidates(reference_time)
+    )
     for bd, bt in candidates:
         params = {
             "serviceKey": API_KEY, "dataType": "JSON",
@@ -164,9 +167,19 @@ def fetch_ultra_srt_nc(nx: int, ny: int, base_date: str | None = None, base_time
     return pd.DataFrame()
 
 # 초단기예보 조회
-def fetch_ultra_srt_fc(nx: int, ny: int, base_date: str | None = None, base_time: str | None = None) -> pd.DataFrame:
+def fetch_ultra_srt_fc(
+    nx: int,
+    ny: int,
+    base_date: str | None = None,
+    base_time: str | None = None,
+    reference_time: datetime | None = None,
+) -> pd.DataFrame:
     url = build_url(EP_FCST)
-    candidates = [(base_date, base_time)] if (base_date and base_time) else _iter_fcst_candidates()
+    candidates = (
+        [(base_date, base_time)]
+        if (base_date and base_time)
+        else _iter_fcst_candidates(reference_time)
+    )
     for bd, bt in candidates:
         params = {
             "serviceKey": API_KEY, "dataType": "JSON",
@@ -204,8 +217,15 @@ def _read_admin_csv(path: str) -> pd.DataFrame:
         return pd.read_csv(path, encoding="utf-8-sig")
 
 # 실행: 수집 후 parquet 저장
-def run_once(admin_csv: str, out_dir: str = None, sample_n: int = 20, save_every: int = 100):
-    out_dir = out_dir or (ROOT / "data").as_posix()
+def run_once(
+    admin_csv: str,
+    out_dir: str | None = None,
+    sample_n: int = 20,
+    save_every: int = 100,
+    run_dt: str | None = None,
+):
+    reference_time = resolve_run_time(run_dt)
+    out_dir = out_dir or SINK_DIR.as_posix()
     cent = _read_admin_csv(admin_csv)
     if sample_n:
         cent = cent.head(sample_n)
@@ -217,8 +237,8 @@ def run_once(admin_csv: str, out_dir: str = None, sample_n: int = 20, save_every
     for i, row in enumerate(pbar, 1):
         nx, ny = int(getattr(row, "nx")), int(getattr(row, "ny"))
 
-        df_nc = fetch_ultra_srt_nc(nx, ny)
-        df_fc = fetch_ultra_srt_fc(nx, ny)
+        df_nc = fetch_ultra_srt_nc(nx, ny, reference_time=reference_time)
+        df_fc = fetch_ultra_srt_fc(nx, ny, reference_time=reference_time)
 
         if len(df_nc): out_nc.append(normalize(df_nc))
         if len(df_fc): out_fc.append(normalize(df_fc))
@@ -243,4 +263,4 @@ def run_once(admin_csv: str, out_dir: str = None, sample_n: int = 20, save_every
     print(f"[SAVE] {out_dir}  nowcast={n_nc}, shortfcst={n_fc}")
 
 if __name__ == "__main__":
-    run_once((ROOT / "data" / "unique_admin_centroids.csv").as_posix())
+    run_once((DATA_ROOT / "unique_admin_centroids.csv").as_posix())

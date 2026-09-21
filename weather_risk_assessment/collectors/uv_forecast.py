@@ -14,9 +14,9 @@ from xml.etree import ElementTree as ET
 
 # ---------- Paths & ENV ----------
 # 프로젝트 루트/데이터 경로 설정
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
-LIVE = DATA / "live"; LIVE.mkdir(parents=True, exist_ok=True)
+from weather_risk_assessment.paths import DATA_ROOT as DATA, SINK_DIR
+from weather_risk_assessment.utils.run_time import resolve_run_time
+LIVE = SINK_DIR
 
 # 행정구역별 중심점 목록 (nx, ny, 행정코드)
 CALL_LIST = DATA / "unique_admin_centroids.csv"
@@ -69,14 +69,18 @@ def _to_naive_index(idx_like) -> pd.DatetimeIndex:
     except Exception:
         return pd.DatetimeIndex(dt)
 
-def _load_targets_from_ultra_shortfcst(horizon_hours: int = 6) -> pd.DatetimeIndex:
+def _load_targets_from_ultra_shortfcst(
+    horizon_hours: int = 6,
+    reference_time: pendulum.DateTime | None = None,
+    source_dir: Path | None = None,
+) -> pd.DatetimeIndex:
     """
     ultra_shortfcst.parquet에서 예측 대상 시각들을 로드.
     - horizon_hours 만큼의 최근 시각을 추출
     - parquet 없거나 비정상일 경우 현재 시각(now)으로 폴백
     """
-    p = LIVE / "ultra_shortfcst.parquet"
-    now_kst = pendulum.now("Asia/Seoul").start_of("hour")
+    p = (source_dir or LIVE) / "ultra_shortfcst.parquet"
+    now_kst = reference_time or resolve_run_time()
 
     if not p.exists():
         log.warning("[UV] ultra_shortfcst.parquet 없음 → now 1개로 폴백")
@@ -99,7 +103,7 @@ def _load_targets_from_ultra_shortfcst(horizon_hours: int = 6) -> pd.DatetimeInd
         sel = dt[-max(1, horizon_hours):]
 
         # 정시로 맞추고 naive index로 변환
-        sel = pd.DatetimeIndex(sel).floor("H").unique().sort_values()
+        sel = pd.DatetimeIndex(sel).floor("h").unique().sort_values()
         out = _to_naive_index(sel)
 
         log.info("[UV] ultra_shortfcst available = %s",
@@ -228,7 +232,12 @@ def _interp_to_targets(s_anchor: pd.Series, targets: pd.DatetimeIndex) -> pd.Ser
     return s.round().clip(lower=0)
 
 # ---------- Main ----------
-def fetch_and_save_uv_wide(out_path: Path | None = None, horizon_hours: Optional[int] = None) -> Path:
+def fetch_and_save_uv_wide(
+    out_path: Path | None = None,
+    horizon_hours: Optional[int] = None,
+    run_dt: str | None = None,
+    source_dir: Path | None = None,
+) -> Path:
     """
     UV 지수 수집 및 저장 파이프라인.
     1) ultra_shortfcst 기준 target 시각 로드
@@ -238,7 +247,12 @@ def fetch_and_save_uv_wide(out_path: Path | None = None, horizon_hours: Optional
     """
     call = _read_call_list()
     hh = int(horizon_hours) if horizon_hours is not None else HORIZON_H
-    targets = _load_targets_from_ultra_shortfcst(horizon_hours=hh)  # tz-naive 보장
+    reference_time = resolve_run_time(run_dt)
+    targets = _load_targets_from_ultra_shortfcst(
+        horizon_hours=hh,
+        reference_time=reference_time,
+        source_dir=source_dir,
+    )  # tz-naive 보장
     anchor = pendulum.instance(targets.min().to_pydatetime(), tz="Asia/Seoul")
 
     log.info("[UV] target hours = %s", ", ".join(pd.Index(targets).strftime("%Y%m%d %H:%M").tolist()))
@@ -273,6 +287,7 @@ def fetch_and_save_uv_wide(out_path: Path | None = None, horizon_hours: Optional
 
     # 저장
     target = Path(out_path) if out_path else DEFAULT_OUT
+    target.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(target, index=False)
 
     log.info("[UV] saved -> %s | rows=%d | times=%s",

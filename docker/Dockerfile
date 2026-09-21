@@ -8,7 +8,7 @@ RUN apt-get update && \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
-COPY requirements.txt /requirements.txt
+COPY requirements/runtime.txt /requirements.txt
 RUN python -m pip install --upgrade pip
 
 USER airflow

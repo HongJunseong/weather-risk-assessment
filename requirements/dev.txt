@@ -1,0 +1,9 @@
+# Offline calculation and data preparation tests (no Airflow/Spark required)
+pandas
+numpy
+pyarrow
+pendulum
+requests
+tenacity
+tqdm
+boto3

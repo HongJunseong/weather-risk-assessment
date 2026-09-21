@@ -11,6 +11,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from weather_risk_assessment.utils.run_time import resolve_run_time
+
 # ===== 기본 설정 =====
 YEAR_MIN, YEAR_MAX = 2000, 2100
 WINDOW_HOURS = 6        # 정확히 6개 시각
@@ -103,7 +105,7 @@ def _resample_hourly(track: pd.DataFrame) -> pd.DataFrame:
     if track.empty: return pd.DataFrame(columns=["lat","lon","wind"]).set_index(pd.DatetimeIndex([]))
     tr = track.sort_values("time").set_index("time")
     if tr.index.nunique() < 2: return tr
-    idx = pd.date_range(tr.index.min(), tr.index.max(), freq="1H")
+    idx = pd.date_range(tr.index.min(), tr.index.max(), freq="1h")
     tr  = (tr.reindex(tr.index.union(idx)).sort_index()
              .interpolate(method="time", limit_area="inside")
              .reindex(idx))
@@ -123,11 +125,14 @@ def _extract_dt_from_forecast(path: Path) -> pd.Series:
     dt = dt[dt.notna()]
     return dt[(dt.dt.year >= YEAR_MIN) & (dt.dt.year <= YEAR_MAX)]
 
-def _derive_target_times(trH: Optional[pd.DataFrame]) -> pd.DatetimeIndex:
+def _derive_target_times(
+    trH: Optional[pd.DataFrame],
+    reference_time: pendulum.DateTime | None = None,
+    source_dir: Path | None = None,
+) -> pd.DatetimeIndex:
     # ultra_nowcast, shortfcst 등에서 fcstDate, fcstTime을 모두 읽어서 target_times로 사용
-    roots = [Path(os.getenv("DRE_SINK_DIR","")),
-             Path(__file__).resolve().parents[1]/"data",
-             Path(__file__).resolve().parents[1]/"data"/"live"]
+    from weather_risk_assessment.paths import DATA_ROOT, SINK_DIR
+    roots = [source_dir] if source_dir is not None else [SINK_DIR, DATA_ROOT]
     names = ["ultra_shortfcst.parquet","ultra_nowcast.parquet"]
     times = []
     for r in roots:
@@ -143,9 +148,9 @@ def _derive_target_times(trH: Optional[pd.DataFrame]) -> pd.DatetimeIndex:
         times = pd.to_datetime(sorted(set(times)))
         return pd.DatetimeIndex(times)
     # 예보 파일이 없으면 현재 시각 기준 6개 시각
-    now_kst = pendulum.now("Asia/Seoul").start_of("hour")
-    end_dt = pd.Timestamp(str(now_kst))
-    return pd.date_range(end=end_dt, periods=WINDOW_HOURS, freq="1H")
+    now_kst = reference_time or resolve_run_time()
+    end_dt = pd.Timestamp(now_kst.naive())
+    return pd.date_range(end=end_dt, periods=WINDOW_HOURS, freq="1h")
 
 # ===== 정렬/보간/외삽 =====
 def _align_on_targets(trH: pd.DataFrame, target: pd.DatetimeIndex) -> pd.DataFrame:
@@ -211,8 +216,13 @@ def _haversine_km(lat1, lon1, lat2, lon2):
 # ===== 메인 =====
 def fetch_typhoon_forecast_wide(out_path: str | Path,
                                 grid_path: str | Path,
-                                target_times: Optional[pd.Series] = None) -> Path:
+                                target_times: Optional[pd.Series] = None,
+                                run_dt: str | None = None,
+                                source_dir: str | Path | None = None) -> Path:
     out_path = Path(out_path); grid_path = Path(grid_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    reference_time = resolve_run_time(run_dt)
+    source_dir = Path(source_dir) if source_dir is not None else None
 
     # 0) grid
     if not grid_path.exists():
@@ -227,7 +237,7 @@ def fetch_typhoon_forecast_wide(out_path: str | Path,
     track = pd.DataFrame()
     try:
         if API_KEY:
-            now_kst = pendulum.now("Asia/Seoul")
+            now_kst = reference_time
             frm = now_kst.subtract(days=7).format("YYYYMMDD")
             to  = now_kst.format("YYYYMMDD")  
 
@@ -310,14 +320,14 @@ def fetch_typhoon_forecast_wide(out_path: str | Path,
 
     # 3) 타깃 시각(정확히 6개)
     if target_times is None:
-        target = _derive_target_times(trH)
+        target = _derive_target_times(trH, reference_time, source_dir)
     else:
         tt = pd.to_datetime(pd.Series(target_times), errors="coerce").dropna().sort_values().unique()
         if len(tt) == 0:
-            target = _derive_target_times(trH)
+            target = _derive_target_times(trH, reference_time, source_dir)
         else:
-            end_dt = pd.Timestamp(tt[-1]).floor("H")
-            target = pd.date_range(end=end_dt, periods=WINDOW_HOURS, freq="1H")
+            end_dt = pd.Timestamp(tt[-1]).floor("h")
+            target = pd.date_range(end=end_dt, periods=WINDOW_HOURS, freq="1h")
     target = pd.DatetimeIndex(target)
 
     # 4) 정렬/보간/외삽

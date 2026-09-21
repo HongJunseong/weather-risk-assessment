@@ -4,13 +4,11 @@ from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 
-ROOT = Path(__file__).resolve().parents[1]
-IN_SHP = ROOT / "data" / "border" / "N3A_G0100000.shp"   # 행정구역 경계 SHP 파일
-OUT    = ROOT / "data" / "admin_centroids.csv"           # 출력 CSV 경로
+from weather_risk_assessment.paths import DATA_ROOT
+from weather_risk_assessment.utils.latlon_to_grid import latlon_to_grid
 
-import sys, os
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-from utils.latlon_to_grid import latlon_to_grid
+IN_SHP = DATA_ROOT / "border" / "N3A_G0100000.shp"
+OUT = DATA_ROOT / "admin_centroids.csv"
 
 
 def main():
