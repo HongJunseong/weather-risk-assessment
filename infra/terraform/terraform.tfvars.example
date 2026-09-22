@@ -1,0 +1,4 @@
+bucket_name          = "weather-risk-<고유한 이름>"
+budget_alert_email   = "you@example.com"
+monthly_budget_usd   = 5
+bronze_retention_days = 30

@@ -7,6 +7,7 @@
 ├── docs/                     # 구조·운영·점검 결과
 ├── dags/                     # Airflow 오케스트레이션
 ├── docker/                   # 컨테이너와 Compose 설정
+├── infra/terraform/          # AWS S3·IAM 정책·Budget 정의
 ├── requirements/             # 실행·개발 의존성
 ├── tests/                    # 외부 서비스 없이 수행하는 회귀 테스트
 ├── data/                     # 로컬 입력과 생성 결과

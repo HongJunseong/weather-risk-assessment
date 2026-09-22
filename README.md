@@ -18,6 +18,7 @@
 - [폴더 구조와 데이터 경로](docs/architecture.md)
 - [개발 환경·운영 안내·점검 결과](docs/maintenance.md)
 - [Bronze 데이터 계약](docs/data-contracts.md)
+- [Terraform AWS 인프라](infra/terraform/README.md)
 - [AI 작업 지침](AGENTS.md)
 
 ## 프로젝트 개요
@@ -147,7 +148,7 @@ kepler.gl 연계에는 좌표가 포함된 데이터가 필요합니다. 현재 
 - **Storage**: AWS S3 Delta Lake (Medallion Architecture)
 - **Alert**: Slack Incoming Webhook
 - **Visualization** *(optional)*: Tableau, kepler.gl
-- **Infrastructure**: Docker Compose + AWS S3
+- **Infrastructure**: Docker Compose + Terraform (AWS S3 · IAM · Budgets)
 
 ---
 

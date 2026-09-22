@@ -56,3 +56,11 @@ dist/
 .ruff_cache/
 data/*.hyper
 *:Zone.Identifier
+
+# Terraform local state and variable values
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log

@@ -90,17 +90,18 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 - GitHub Actions에서 Java 17·Python 3.11·PySpark 3.5.1 조합으로 통합 테스트를 실행한다.
 - MinIO의 S3 API에 Bronze 5종을 업로드하고 파티션 키와 Parquet 내용을 검증한다.
 - 실제 AWS S3에서도 고유 테스트 prefix로 같은 검증을 수행하고 객체를 즉시 삭제한다.
+- Terraform으로 퍼블릭 차단·TLS·AES-256 암호화·수명주기를 적용한 S3, 파이프라인 경로
+  최소 권한 IAM 정책, 월 비용 Budget을 정의한다. 실행 역할과 Access Key는 만들지 않는다.
+- GitHub Actions에서 Terraform 포맷과 provider 스키마 검증을 수행한다.
 
 ## 후속 개선 우선순위
 
-1. Terraform으로 S3·IAM·Budget을 정의한다.
+1. 비루트 임시 자격증명으로 Terraform plan을 검토하고 AWS 인프라를 최초 적용한다.
 2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
-3. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
-   범위 밖에서는 원본 재수집이 불가능하므로 Bronze 보존·수명주기 정책을 정한다.
-4. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
+3. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
    constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
-5. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-6. Slack 실패 처리 기준을 검토한다.
+4. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+5. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 소량 통합 테스트를 기준으로 한다. 실제 API 수집, Delta 적재,
 Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
@@ -114,6 +115,8 @@ Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
 - Python 구문 컴파일 및 `git diff --check` 통과.
 - 임시 MinIO 서버에서 버킷 생성, Bronze 5개 업로드, 객체 키와 Parquet 재읽기 통과.
 - 서울 리전의 임시 AWS S3 버킷에서도 같은 검증을 통과하고 객체와 버킷을 삭제함.
+- Terraform 1.16.3과 AWS provider 6.66.0으로 `fmt -check`와 `validate` 통과. 실제 plan과
+  apply는 비루트 AWS 자격증명과 사용자별 변수 입력 전이라 미수행.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.
 - WSL Docker 연동이 비활성화되어 Compose CLI 검증·이미지 빌드·컨테이너 실행은 미수행.
   컨테이너 기준 Python 3.11에서의 통합 검증도 후속 확인이 필요하다.
