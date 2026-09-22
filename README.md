@@ -6,9 +6,9 @@
 ![spark](https://img.shields.io/badge/Apache%20Spark-3.5.1-E25A1C)
 ![aws s3](https://img.shields.io/badge/AWS-S3%20Delta%20Lake-FF9900)
 ![slack](https://img.shields.io/badge/Slack-Alert-4A154B)
-![tableau public](https://img.shields.io/badge/Tableau%20Public-Portfolio-E97627)
+![tableau public](https://img.shields.io/badge/Tableau%20Public-Demo-E97627)
 
-> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, 공개 가능한 CSV로 변환해 **Tableau Public 포트폴리오 대시보드**에 연결할 수 있습니다.
+> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, 공개 가능한 CSV로 변환해 **Tableau Public 대시보드**로 시각화할 수 있습니다.
 
 ---
 
@@ -17,7 +17,6 @@
 - [폴더 구조와 데이터 경로](docs/architecture.md)
 - [개발 환경·운영 안내·점검 결과](docs/maintenance.md)
 - [Bronze 데이터 계약](docs/data-contracts.md)
-- [Tableau Public 데모 제작](docs/tableau-public.md)
 - [Terraform AWS 인프라](infra/terraform/README.md)
 - [AI 작업 지침](AGENTS.md)
 
@@ -82,7 +81,7 @@ flowchart LR
   E --> F["Spark<br>Gold Aggregate"]
   F --> G["Gold<br>S3 Delta Lake<br>최신·일별 집계"]
   G --> H["Export<br>S3 Parquet"]
-  H -.->|공개 CSV| V["Tableau Public<br>포트폴리오 데모"]
+  H -.->|공개 CSV| V["Tableau Public<br>Demo"]
   H --> S["Slack<br>위험 지역 자동 알림"]
 ```
 
@@ -108,12 +107,11 @@ flowchart LR
 ✅ 기상 위험 알림 | 현재 위험 지역 없음
 ```
 
-### Tableau Public 대시보드 *(포트폴리오 데모)*
+### Tableau Public 대시보드 *(Demo)*
 Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 CSV를 만듭니다. 운영 DAG는 Tableau 계정이나 인증정보를 사용하지 않으며, 무료 웹 편집기에서 CSV를 수동 게시합니다.
 
 - 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 바람, 폭염, 태풍)
 - **툴팁**에 예측 시각 및 위험도 구성요소 노출
-- [전국 264개 지점 × 8개 시각의 시연 CSV](examples/tableau/risk_dashboard_sample.csv) · [재현 절차](docs/tableau-public.md)
 - [Tableau Public에서 대시보드 열기](https://public.tableau.com/views/WeatherRiskDashboard_17900819962470/WeatherRiskDashboard?:showVizHome=no)
 
 [![Weather Risk Dashboard](docs/assets/tableau-dashboard.png)](https://public.tableau.com/views/WeatherRiskDashboard_17900819962470/WeatherRiskDashboard?:showVizHome=no)
@@ -141,7 +139,7 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 - **Processing**: pandas + PySpark 3.5.1
 - **Storage**: AWS S3 Delta Lake (Medallion Architecture)
 - **Alert**: Slack Incoming Webhook
-- **Visualization** *(portfolio demo)*: Tableau Public
+- **Visualization** *(demo)*: Tableau Public
 - **Infrastructure**: Docker Compose + Terraform (AWS S3 · IAM · Budgets)
 
 ---
