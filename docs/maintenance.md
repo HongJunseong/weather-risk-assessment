@@ -12,6 +12,13 @@ python -m unittest discover -s tests -q
 python -m compileall -q weather_risk_assessment dags tests
 ```
 
+Bronze → Silver → Gold 로컬 Spark 통합 테스트는 별도 의존성을 설치해 실행한다.
+
+```bash
+python -m pip install -r requirements/integration.txt
+python -m unittest tests.test_medallion_pipeline -q
+```
+
 전체 런타임 의존성은 `requirements/runtime.txt`에서 관리하며 Docker 빌드가 사용한다.
 개발 의존성은 기본 계산·데이터 변환 테스트에 필요한 최소 구성이다.
 로컬 모듈 실행 시 환경변수를 미리 설정한다. `.env`는 Compose가 컨테이너에 주입하며,
@@ -59,24 +66,30 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 - 단기·초단기예보의 KMA 응답 헤더와 `items` 구조를 공통 검증하고, 인증 오류·자료 없음·
   정상 빈 응답 fixture로 회귀 테스트한다.
 - Silver/Gold 저장 전에 스키마, 위험도 범위, 지역·시각별 유일성을 검사한다.
+- 샘플 Bronze 5종과 행정구역 매핑으로 실제 Spark Silver·Gold 변환을 연결 검증한다.
 
 ## 후속 개선 우선순위
 
-1. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
+1. GitHub Actions에 로컬 Spark 통합 테스트를 추가한다.
+2. MinIO로 S3 호환 Bronze 입출력을 검증한다.
+3. 실제 AWS S3에 소량 데이터로 최종 검증한다.
+4. Terraform으로 S3·IAM·Budget을 정의한다.
+5. 실제 배포 대상이 정해질 때만 CD를 추가한다.
+6. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
    범위 밖에서는 원본 재수집이 불가능하므로 Bronze 보존·수명주기 정책을 정한다.
-2. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
+7. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
    constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
-3. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-4. Slack 실패 처리 기준을 검토한다.
+8. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+9. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 로컬 테스트를 기준으로 한다. 실제 API 수집, S3 데이터 검증,
-Spark 실행, Slack 전송을 완료했다는 의미는 아니다.
+Delta 적재, Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
 
 ## 이번 변경의 검증 결과
 
-- Python 3.12 임시 가상환경에서 unittest 49개 실행(48개 통과, 1개 건너뜀): 경로와 실행
+- Python 3.12 임시 가상환경에서 unittest 50개 실행(49개 통과, 1개 건너뜀): 경로와 실행
   시각, 정상·오류·결측 KMA 응답 파싱, Bronze/Silver/Gold 계약, Spark Job import,
-  Airflow DAG import, Slack 경로,
+  로컬 Spark Bronze → Silver → Gold 변환, Airflow DAG import, Slack 경로,
   CSV/Parquet 생성, 위험도·결측치·강수 단위·좌표 변환.
 - Python 구문 컴파일 및 `git diff --check` 통과.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.

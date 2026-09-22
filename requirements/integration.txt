@@ -1,0 +1,3 @@
+-r dev.txt
+setuptools
+pyspark==3.5.1
