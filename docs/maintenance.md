@@ -116,16 +116,16 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   최소 권한 IAM 정책, 월 비용 Budget을 정의한다. 실행 역할과 Access Key는 만들지 않는다.
 - GitHub Actions에서 Terraform 포맷과 provider 스키마 검증을 수행한다.
 - Airflow 2.7.3과 프로젝트 직접 의존성을 Python 3.11/Linux 기준으로 해석한 런타임 잠금
-  파일을 추가하고 Docker가 설치 후 `pip check`를 수행한다.
+  파일을 추가하고 Docker가 설치 후 `pip check`를 수행한다. GitHub Actions에서도 같은
+  Dockerfile의 이미지 빌드를 검증한다.
 - 버전 관리·퍼블릭 차단·TLS·AES-256 암호화를 적용한 별도 S3 backend를 만들고 메인 및
   bootstrap state를 서로 다른 key로 이전한다. S3 네이티브 잠금을 사용한다.
 
 ## 후속 개선 우선순위
 
-1. Docker 이미지 빌드 검증을 GitHub Actions에 추가한다.
-2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
-3. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-4. Slack 실패 처리 기준을 검토한다.
+1. 실제 배포 대상이 정해질 때만 CD를 추가한다.
+2. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+3. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 소량 통합 테스트를 기준으로 한다. 실제 API 수집, Delta 적재,
 Slack 전송을 완료했다는 의미는 아니다.

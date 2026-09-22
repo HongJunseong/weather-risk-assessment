@@ -72,6 +72,18 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q weather_risk_assessment dags tests
 
+  docker-build:
+    name: Airflow image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Airflow image
+        run: docker build --file docker/Dockerfile --tag weather-risk-airflow:ci .
+
   spark-integration:
     name: Spark medallion integration
     runs-on: ubuntu-latest
