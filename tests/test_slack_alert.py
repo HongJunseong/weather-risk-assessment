@@ -1,8 +1,8 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from weather_risk_assessment.alerts.slack_alert import resolve_risk_path
+from weather_risk_assessment.alerts.slack_alert import _post_slack, resolve_risk_path
 
 
 class SlackAlertPathTests(unittest.TestCase):
@@ -31,6 +31,36 @@ class SlackAlertPathTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "RISK_LATEST_PATH"):
                 resolve_risk_path()
+
+
+class SlackDeliveryTests(unittest.TestCase):
+    @patch("weather_risk_assessment.alerts.slack_alert.requests.post")
+    def test_success_posts_with_timeout(self, post):
+        post.return_value = Mock(status_code=200)
+
+        environment = {"SLACK_WEBHOOK_URL": "https://hooks.example/test"}
+        with patch.dict(os.environ, environment, clear=True):
+            _post_slack("alert")
+
+        post.assert_called_once_with(
+            "https://hooks.example/test", json={"text": "alert"}, timeout=10
+        )
+
+    def test_missing_webhook_fails(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "SLACK_WEBHOOK_URL"):
+                _post_slack("alert")
+
+    @patch("weather_risk_assessment.alerts.slack_alert.requests.post")
+    def test_http_error_fails_without_exposing_webhook(self, post):
+        post.return_value = Mock(status_code=500, text="server error")
+
+        environment = {"SLACK_WEBHOOK_URL": "https://hooks.example/secret"}
+        with patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "status=500") as raised:
+                _post_slack("alert")
+
+        self.assertNotIn("secret", str(raised.exception))
 
 
 if __name__ == "__main__":

@@ -50,15 +50,16 @@ def load_high_risk_regions(path: str | None = None) -> pd.DataFrame:
 
 
 def _post_slack(text: str) -> None:
-    webhook_url = os.getenv("SLACK_WEBHOOK_URL", "")
+    webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if not webhook_url:
-        log.info("SLACK_WEBHOOK_URL not set. Skipping Slack notification.")
-        return
+        raise ValueError("SLACK_WEBHOOK_URL is required to send Slack notifications.")
     resp = requests.post(webhook_url, json={"text": text}, timeout=10)
     if resp.status_code == 200:
         log.info("Slack notification sent.")
     else:
-        log.warning("Slack notification failed. status=%s body=%s", resp.status_code, resp.text)
+        raise RuntimeError(
+            f"Slack notification failed. status={resp.status_code} body={resp.text}"
+        )
 
 
 def send_high_risk_alerts(path: str | None = None) -> int:

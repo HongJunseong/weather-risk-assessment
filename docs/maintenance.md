@@ -120,21 +120,22 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   Dockerfile의 이미지 빌드를 검증한다.
 - 버전 관리·퍼블릭 차단·TLS·AES-256 암호화를 적용한 별도 S3 backend를 만들고 메인 및
   bootstrap state를 서로 다른 key로 이전한다. S3 네이티브 잠금을 사용한다.
+- Slack 웹훅 미설정과 HTTP 오류를 알림 태스크 실패로 처리한다. 알림은 Gold/Export 뒤에
+  실행되므로 전송 실패가 이미 생성된 데이터에는 영향을 주지 않는다.
 
 ## 후속 개선 우선순위
 
 1. 실제 배포 대상이 정해질 때만 CD를 추가한다.
 2. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-3. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 소량 통합 테스트를 기준으로 한다. 실제 API 수집, Delta 적재,
 Slack 전송을 완료했다는 의미는 아니다.
 
 ## 이번 변경의 검증 결과
 
-- Python 3.12 임시 가상환경에서 unittest 52개 실행(49개 통과, 3개 건너뜀): 경로와 실행
+- Python 3.12 임시 가상환경에서 unittest 55개 실행(51개 통과, 4개 건너뜀): 경로와 실행
   시각, 정상·오류·결측 KMA 응답 파싱, Bronze/Silver/Gold 계약, Spark Job import,
-  로컬 Spark Bronze → Silver → Gold 변환, Airflow DAG import, Slack 경로,
+  로컬 Spark Bronze → Silver → Gold 변환, Airflow DAG import, Slack 경로·전송 실패,
   CSV/Parquet 생성, 위험도·결측치·강수 단위·좌표 변환.
 - Python 구문 컴파일 및 `git diff --check` 통과.
 - 임시 MinIO 서버에서 버킷 생성, Bronze 5개 업로드, 객체 키와 Parquet 재읽기 통과.
