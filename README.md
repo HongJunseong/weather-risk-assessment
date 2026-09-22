@@ -113,7 +113,7 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 
 - 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 바람, 폭염, 태풍)
 - **툴팁**에 예측 시각 및 위험도 구성요소 노출
-- [시연용 예시값 CSV](examples/tableau/risk_dashboard_sample.csv) · [재현 절차](docs/tableau-public.md)
+- [전국 264개 지점 × 8개 시각의 시연 CSV](examples/tableau/risk_dashboard_sample.csv) · [재현 절차](docs/tableau-public.md)
 
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
 

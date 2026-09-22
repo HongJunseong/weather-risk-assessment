@@ -41,6 +41,8 @@ def main(argv: list[str] | None = None) -> None:
         latest = spark.read.format("delta").load(paths["latest_source"])
         daily = spark.read.format("delta").load(paths["daily_source"])
         latest_out = latest.select(
+            "nx",
+            "ny",
             "admin_names",
             "fcst_ts",
             "R_total",

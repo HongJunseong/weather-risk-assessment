@@ -8,7 +8,14 @@ import pandas as pd
 from weather_risk_assessment.paths import DATA_ROOT
 
 
-REQUIRED_RISK_COLUMNS = {"admin_names", "fcst_ts", "R_total", "risk_level"}
+REQUIRED_RISK_COLUMNS = {
+    "admin_names",
+    "fcst_ts",
+    "nx",
+    "ny",
+    "R_total",
+    "risk_level",
+}
 RISK_COLUMNS = {
     "R_total": "risk_score",
     "R_rain": "rain_risk",
@@ -30,7 +37,7 @@ def prepare_tableau_csv(
         raise ValueError(f"Missing columns in risk data: {sorted(missing)}")
 
     centroids = pd.read_csv(centroids_path, encoding="utf-8-sig")
-    required_centroids = {"admin_name", "lat", "lon"}
+    required_centroids = {"admin_name", "nx", "ny", "lat", "lon"}
     missing = required_centroids - set(centroids.columns)
     if missing:
         raise ValueError(f"Missing columns in centroid data: {sorted(missing)}")
@@ -39,8 +46,8 @@ def prepare_tableau_csv(
         "admin_name"
     )
     tableau = tableau.merge(
-        centroids[list(required_centroids)].drop_duplicates("admin_name"),
-        on="admin_name",
+        centroids[list(required_centroids)].drop_duplicates(["admin_name", "nx", "ny"]),
+        on=["admin_name", "nx", "ny"],
         how="left",
         validate="many_to_one",
     )

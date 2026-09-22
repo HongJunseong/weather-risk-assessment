@@ -45,6 +45,8 @@ def build_latest(frame: Any) -> Any:
         .otherwise("LOW"),
     )
     return latest.select(
+        "nx",
+        "ny",
         "admin_names",
         "fcst_ts",
         "dt",

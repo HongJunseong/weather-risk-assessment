@@ -46,8 +46,9 @@ Python 모듈이므로 패키지 내부에 둔다. 별도 `src/` 계층은 도�
   호출 전에 실패하므로 손상된 실행 파티션이 S3에 생성되지 않는다.
 - Tableau Public용 CSV는 latest Parquet의 행정구역별 위험도와 `admin_centroids.csv`의
   대표 좌표를 결합한다. Tableau 계정 인증과 게시는 운영 DAG에서 수행하지 않는다.
-- latest Parquet export에는 기존 컬럼을 유지하면서 `R_rain`, `R_heat`, `R_wind`, `R_uv`,
-  `R_typhoon`을 추가한다. 기존 export를 사용하는 환경은 다시 실행해야 새 컬럼을 얻는다.
+- latest Parquet export에는 기존 컬럼을 유지하면서 정확한 좌표 결합을 위한 `nx`, `ny`와
+  `R_rain`, `R_heat`, `R_wind`, `R_uv`, `R_typhoon`을 추가한다. 기존 export를 사용하는
+  환경은 다시 실행해야 새 컬럼을 얻는다.
 
 ## 기존 환경에서 이전
 

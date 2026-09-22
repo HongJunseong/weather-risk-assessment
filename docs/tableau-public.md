@@ -6,7 +6,9 @@ Tableau Cloud 자동 게시가 아니라 무료 Tableau Public에 공개 가능�
 ## 데이터 준비
 
 화면을 먼저 구성할 때는 실제 예보가 아닌 시연용 값인
-`examples/tableau/risk_dashboard_sample.csv`를 사용한다.
+`examples/tableau/risk_dashboard_sample.csv`를 사용한다. 공개 행정경계에서 만든 전국
+264개 대표 좌표와 8개 예보 시각(총 2,112행)을 포함하며, `data_status`는
+`SYNTHETIC_DEMO`로 고정된다.
 
 실제 파이프라인 결과로 교체하려면 S3의 `gold_export/risk_latest` Parquet 디렉터리를
 로컬로 내려받고 다음을 실행한다. `admin_centroids.csv`는 기본 데이터 준비 과정에서
@@ -32,7 +34,8 @@ CSV에는 공개 가능한 행정구역명, 예보 시각, 종합·지표별 위
    선택한다.
 2. **Upload from computer**로 샘플 또는 생성한 CSV를 올린다.
 3. `longitude`를 Columns, `latitude`를 Rows에 놓고 `admin_name`을 Detail,
-   `risk_score`를 Color에 놓아 위험도 지도를 만든다.
+   `risk_score`를 Color에 놓아 위험도 지도를 만든다. `forecast_time`을 Filters에 놓고
+   한 시각만 선택한다.
 4. 새 시트에서 `admin_name`을 Rows, `risk_score`를 Columns에 놓고 내림차순으로 정렬해
    지역별 막대 차트를 만든다.
 5. 새 시트에서 Measure Values에 `rain_risk`, `heat_risk`, `wind_risk`, `uv_risk`,
