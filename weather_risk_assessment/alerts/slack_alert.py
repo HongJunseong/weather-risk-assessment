@@ -10,9 +10,6 @@ log = logging.getLogger(__name__)
 if not log.handlers:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s - %(message)s")
 
-BUCKET = os.environ["S3_RISK_STREAM_BUCKET"]
-DEFAULT_S3_PATH = f"s3://{BUCKET}/gold_export/risk_latest"
-
 HIGH_RISK_THRESHOLD = 0.6
 
 RISK_EMOJI = {
@@ -21,8 +18,23 @@ RISK_EMOJI = {
 }
 
 
+def resolve_risk_path(path: str | None = None) -> str:
+    if path:
+        return path
+    configured = os.getenv("RISK_LATEST_PATH", "").strip()
+    if configured:
+        return configured
+    bucket = os.getenv("S3_RISK_STREAM_BUCKET", "").strip()
+    if not bucket:
+        raise ValueError(
+            "Risk data path is required. Pass path, set RISK_LATEST_PATH, "
+            "or set S3_RISK_STREAM_BUCKET."
+        )
+    return f"s3://{bucket}/gold_export/risk_latest"
+
+
 def load_high_risk_regions(path: str | None = None) -> pd.DataFrame:
-    src = path or os.getenv("RISK_LATEST_PATH") or DEFAULT_S3_PATH
+    src = resolve_risk_path(path)
     log.info("Reading risk data from %s", src)
 
     df = pd.read_parquet(src)

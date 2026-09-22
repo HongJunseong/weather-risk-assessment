@@ -42,8 +42,13 @@ os.environ.setdefault("KMA_LOG_LEVEL", "WARNING")
 
 
 # ===== Scripts =====
-from weather_risk_assessment.scripts.build_admin_centroids_from_shp import main as make_admin_centroids_main
 from weather_risk_assessment.scripts.make_admin_list import main as make_admin_list_main
+
+
+def make_admin_centroids_main():
+    from weather_risk_assessment.scripts.build_admin_centroids_from_shp import main
+
+    return main()
 
 
 # ===== Collectors =====

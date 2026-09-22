@@ -54,6 +54,8 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   전에 차단한다.
 - Spark Job의 환경변수 조회와 SparkSession 생성을 실행 진입점으로 옮겼다. 명시적인
   `file://` 입출력 경로를 넘기면 S3 환경변수 없이 로컬 Spark 실행도 가능하다.
+- Slack 결과 경로도 실행 시점에 해석하고, 무거운 지리 라이브러리는 태스크 실행 시
+  import한다. Airflow `DagBag`으로 비밀값 없이 DAG와 태스크 구성을 검사한다.
 
 ## 후속 개선 우선순위
 
@@ -61,19 +63,19 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 2. Silver/Gold의 스키마, 위험도 범위, 지역·시각별 유일성 계약을 추가한다.
 3. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
    범위 밖에서는 원본 재수집이 불가능하므로 Bronze 보존·수명주기 정책을 정한다.
-4. Airflow DAG import 검증을 추가한다.
-5. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
+4. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
    constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
-6. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-7. Slack 실패 처리 기준을 검토한다.
+5. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+6. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 로컬 테스트를 기준으로 한다. 실제 API 수집, S3 데이터 검증,
 Spark 실행, Slack 전송을 완료했다는 의미는 아니다.
 
 ## 이번 변경의 검증 결과
 
-- Python 3.12 임시 가상환경에서 unittest 24개 통과: 경로와 실행 시각, 대표 KMA 응답
-  파싱, Bronze 계약, CSV/Parquet 생성, 위험도·결측치·강수 단위·좌표 변환.
+- Python 3.12 임시 가상환경에서 unittest 46개 통과: 경로와 실행 시각, 대표 KMA 응답
+  파싱, Bronze/Silver/Gold 계약, Spark Job import, Airflow DAG import, Slack 경로,
+  CSV/Parquet 생성, 위험도·결측치·강수 단위·좌표 변환.
 - Python 구문 컴파일 및 `git diff --check` 통과.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.
 - WSL Docker 연동이 비활성화되어 Compose CLI 검증·이미지 빌드·컨테이너 실행은 미수행.
