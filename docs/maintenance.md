@@ -8,7 +8,7 @@
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements/dev.txt
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -q
 python -m compileall -q weather_risk_assessment dags tests
 ```
 
