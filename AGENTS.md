@@ -7,8 +7,8 @@
 - 예보 시각과 파티션은 KST 기준이다. 시간대가 없는 pandas 시각과 시간대가 있는 시각을 혼합하는 변경은 주의해서 검증한다.
 - 스키마·S3 경로·Airflow task_id·스케줄 변경은 downstream 영향과 이력 호환성을 검토하고 문서에 기록한다.
 - `.env`와 실제 수집 결과는 커밋하지 않는다. 환경변수 추가 시 `.env.example`과 실행 문서를 갱신한다.
-- 외부 API·S3·Slack 없이 가능한 검증부터 수행한다. 기본 검증: `python3 -m unittest discover -s tests -q`, `python3 -m compileall -q weather_risk_assessment dags tests`.
-- Docker 환경이 있으면 `docker compose --env-file .env -f docker/docker-compose.yaml config --quiet`로 설정을 확인한다. 외부 서비스를 사용한 실제 실행 여부는 검증 결과에 명시한다.
+- 검증은 변경 위험에 비례해 실행한다. 작업 중과 로컬 커밋 전에는 관련 테스트, `git diff --check`, 변경한 Python 파일의 구문 컴파일을 우선한다. 전체 unittest와 compileall은 공통 데이터 흐름을 바꿨거나 CI를 실행할 수 없을 때 한 번만 수행하고, 그 외 전체 검증은 CI에 맡긴다. 문서만 바꾼 경우 diff와 링크·명령·경로만 확인한다.
+- Docker Compose 설정은 Docker·환경변수·의존성 변경 시 확인하고, Spark 통합 테스트는 Spark 변환이나 스키마 변경 시에만 실행한다. 외부 API·S3·Slack을 사용한 실제 실행 여부는 검증 결과에 명시한다.
 - 필요한 파일 구간만 읽고 독립적인 조회는 묶어서 실행한다. 같은 세션에서 변경 없는 문서·스킬을 다시 읽지 않으며, 도구 출력과 테스트 로그를 제한하고 통과한 검증은 관련 변경이 없는 한 반복하지 않는다.
 - 하나의 검토 가능한 작업이 완료되고 관련 검증이 통과하면 `.agents/skills/commit/SKILL.md`에 따라 로컬 커밋을 만든다. 별도 요청 없이 push, merge, rebase, amend, tag 생성은 하지 않는다.
 - 반복 절차가 확인된 뒤 스킬로 분리한다. 일반 개발 상식을 장황하게 지침에 추가하지 않는다.
