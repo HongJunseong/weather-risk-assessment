@@ -112,15 +112,16 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 - GitHub Actions에서 Terraform 포맷과 provider 스키마 검증을 수행한다.
 - Airflow 2.7.3과 프로젝트 직접 의존성을 Python 3.11/Linux 기준으로 해석한 런타임 잠금
   파일을 추가하고 Docker가 설치 후 `pip check`를 수행한다.
+- 버전 관리·퍼블릭 차단·TLS·AES-256 암호화를 적용한 별도 S3 backend를 만들고 메인 및
+  bootstrap state를 서로 다른 key로 이전한다. S3 네이티브 잠금을 사용한다.
 
 ## 후속 개선 우선순위
 
-1. 현재 로컬 Terraform state를 별도 S3 backend로 이전하고 잠금·복구 절차를 정한다.
-2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
-3. Docker Desktop의 WSL 연동을 활성화해 잠금된 Airflow 이미지를 실제 빌드하고 Compose
+1. Docker Desktop의 WSL 연동을 활성화해 잠금된 Airflow 이미지를 실제 빌드하고 Compose
    기동을 검증한다.
-4. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-5. Slack 실패 처리 기준을 검토한다.
+2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
+3. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+4. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 소량 통합 테스트를 기준으로 한다. 실제 API 수집, Delta 적재,
 Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
@@ -137,6 +138,8 @@ Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
 - Terraform 1.16.3과 AWS provider 6.66.0으로 `fmt -check`와 `validate`를 통과하고,
   비루트 임시 자격증명으로 서울 리전에 S3·IAM 정책·월 비용 Budget을 최초 적용했다.
   적용 후 refresh plan은 변경 0개이며 state와 사용자 변수는 Git에서 제외한다.
+- 메인 10개 항목과 bootstrap 7개 항목의 state를 버전 관리되는 S3 backend로 이전했다.
+  두 구성 모두 원격 state 기반 refresh plan에서 변경 0개를 확인했다.
 - 잠금된 런타임 161개 패키지를 Python 3.11 임시 환경에 설치하고 의존성 검사, 전체
   unittest, Spark Bronze → Silver → Gold 통합 테스트와 구문 컴파일 통과.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.

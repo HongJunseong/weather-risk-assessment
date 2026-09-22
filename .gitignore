@@ -63,4 +63,5 @@ data/*.hyper
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+**/backend.hcl
 crash.log

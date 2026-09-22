@@ -1,0 +1,5 @@
+bucket       = "weather-risk-tfstate-<계정번호>"
+key          = "weather-risk-assessment/bootstrap.tfstate"
+region       = "ap-northeast-2"
+encrypt      = true
+use_lockfile = true

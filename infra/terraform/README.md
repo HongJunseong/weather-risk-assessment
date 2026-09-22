@@ -27,3 +27,24 @@ terraform plan
 `terraform.tfvars`와 state 파일은 Git에서 제외된다. Access Key나 비밀값을 Terraform 파일에
 기록하지 않는다. `terraform apply`는 plan의 생성·변경·삭제 항목과 예상 비용을 검토한 뒤
 직접 실행한다.
+
+## 원격 state
+
+`bootstrap/`은 메인 인프라와 분리된 S3 state 버킷을 만든다. 버킷은 퍼블릭 접근과 HTTP
+요청을 차단하고 AES-256 암호화와 객체 버전 관리를 사용하며, Terraform에서 실수로 삭제할
+수 없도록 보호한다. 메인 구성은 Git에서 제외된 `backend.hcl`을 읽어 S3 네이티브 잠금을
+사용한다. DynamoDB 잠금 테이블은 만들지 않는다.
+
+```bash
+cd infra/terraform/bootstrap
+cp terraform.tfvars.example terraform.tfvars
+terraform init
+terraform apply
+cp backend.hcl.example backend.hcl
+terraform init -migrate-state -backend-config=backend.hcl
+
+cd ..
+cp backend.hcl.example backend.hcl
+terraform init -migrate-state -backend-config=backend.hcl
+terraform plan
+```

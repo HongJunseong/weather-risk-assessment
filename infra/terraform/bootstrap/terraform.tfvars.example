@@ -1,0 +1,1 @@
+state_bucket_name = "weather-risk-tfstate-<계정번호>"
