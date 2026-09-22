@@ -115,7 +115,7 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 
 ## 후속 개선 우선순위
 
-1. 비루트 임시 자격증명으로 Terraform plan을 검토하고 AWS 인프라를 최초 적용한다.
+1. 현재 로컬 Terraform state를 별도 S3 backend로 이전하고 잠금·복구 절차를 정한다.
 2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
 3. Docker Desktop의 WSL 연동을 활성화해 잠금된 Airflow 이미지를 실제 빌드하고 Compose
    기동을 검증한다.
@@ -134,8 +134,9 @@ Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
 - Python 구문 컴파일 및 `git diff --check` 통과.
 - 임시 MinIO 서버에서 버킷 생성, Bronze 5개 업로드, 객체 키와 Parquet 재읽기 통과.
 - 서울 리전의 임시 AWS S3 버킷에서도 같은 검증을 통과하고 객체와 버킷을 삭제함.
-- Terraform 1.16.3과 AWS provider 6.66.0으로 `fmt -check`와 `validate` 통과. 실제 plan과
-  apply는 비루트 AWS 자격증명과 사용자별 변수 입력 전이라 미수행.
+- Terraform 1.16.3과 AWS provider 6.66.0으로 `fmt -check`와 `validate`를 통과하고,
+  비루트 임시 자격증명으로 서울 리전에 S3·IAM 정책·월 비용 Budget을 최초 적용했다.
+  적용 후 refresh plan은 변경 0개이며 state와 사용자 변수는 Git에서 제외한다.
 - 잠금된 런타임 161개 패키지를 Python 3.11 임시 환경에 설치하고 의존성 검사, 전체
   unittest, Spark Bronze → Silver → Gold 통합 테스트와 구문 컴파일 통과.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.
