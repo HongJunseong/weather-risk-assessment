@@ -39,3 +39,32 @@ jobs:
 
       - name: Compile Python sources
         run: python -m compileall -q weather_risk_assessment dags tests
+
+  dag-import:
+    name: Airflow DAG import
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AIRFLOW_VERSION: "2.7.3"
+      PYTHON_VERSION: "3.11"
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+
+      - name: Install Airflow and project dependencies
+        run: |
+          CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+          python -m pip install --upgrade pip
+          python -m pip install "apache-airflow==${AIRFLOW_VERSION}" -r requirements/dev.txt --constraint "${CONSTRAINT_URL}"
+
+      - name: Load DAG with Airflow
+        run: python -m unittest discover -s tests -p "test_dag_import.py" -v
