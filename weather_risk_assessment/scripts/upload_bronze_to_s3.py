@@ -3,12 +3,27 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import boto3
+from botocore.config import Config
 
 from weather_risk_assessment.contracts.bronze import (
     CONTRACTS,
     validate_bronze_directory,
 )
 from weather_risk_assessment.utils.run_time import normalize_run_dt
+
+
+def _s3_client():
+    endpoint_url = os.getenv("S3_ENDPOINT_URL", "").strip()
+    options = {
+        "region_name": os.getenv("AWS_REGION")
+        or os.getenv("AWS_DEFAULT_REGION")
+        or "ap-northeast-2"
+    }
+    if endpoint_url:
+        options["endpoint_url"] = endpoint_url
+        options["config"] = Config(s3={"addressing_style": "path"})
+    return boto3.client("s3", **options)
+
 
 def main(run_dt: str | None = None, sink_dir: str | Path | None = None) -> None:
     """
@@ -34,7 +49,7 @@ def main(run_dt: str | None = None, sink_dir: str | Path | None = None) -> None:
         )
     report.raise_for_errors()
 
-    s3 = boto3.client("s3")
+    s3 = _s3_client()
     for dataset, contract in CONTRACTS.items():
         src = sink_dir / contract.filename
 
