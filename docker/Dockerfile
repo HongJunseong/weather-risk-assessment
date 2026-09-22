@@ -9,8 +9,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
 COPY requirements/runtime.txt /requirements.txt
-RUN python -m pip install --upgrade pip
 
 USER airflow
 
-RUN pip install apache-airflow==${AIRFLOW_VERSION} -r /requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt && pip check

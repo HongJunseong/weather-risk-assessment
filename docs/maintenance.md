@@ -39,10 +39,27 @@ AWS_INTEGRATION_BUCKET=<임시 버킷 이름> \
 python -m unittest tests.test_aws_s3_integration -q
 ```
 
-전체 런타임 의존성은 `requirements/runtime.txt`에서 관리하며 Docker 빌드가 사용한다.
-개발 의존성은 기본 계산·데이터 변환 테스트에 필요한 최소 구성이다.
+직접 사용하는 런타임 의존성은 `requirements/runtime.in`, Python 3.11/Linux에서 해석한
+전체 잠금 버전은 `requirements/runtime.txt`에서 관리하며 Docker 빌드가 잠금 파일을
+사용한다. 개발 의존성은 기본 계산·데이터 변환 테스트에 필요한 최소 구성이다.
 로컬 모듈 실행 시 환경변수를 미리 설정한다. `.env`는 Compose가 컨테이너에 주입하며,
 개별 Python 모듈이 자동으로 읽는 것으로 가정하지 않는다.
+
+런타임 버전을 갱신할 때는 Airflow 2.7.3 공식 constraints를 기준으로 한다. 현재 프로젝트가
+직접 고정한 PySpark와 Tableau/AWS의 `urllib3` 조합은 공식 constraints와 충돌하므로 해당
+항목만 제외하고 잠금 파일을 다시 만든 뒤 전체 테스트와 Docker 빌드를 확인한다.
+
+```bash
+curl -fsSLo /tmp/airflow-constraints-3.11.txt \
+  https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.11.txt
+sed -E '/^(pyspark|tableauserverclient|boto3|botocore|s3transfer|urllib3)==/d' \
+  /tmp/airflow-constraints-3.11.txt > /tmp/weather-risk-constraints.txt
+uv pip compile requirements/runtime.in \
+  --constraint /tmp/weather-risk-constraints.txt \
+  --python-version 3.11 --python-platform x86_64-manylinux2014 \
+  --no-annotate --output-file requirements/runtime.txt \
+  --custom-compile-command "see docs/maintenance.md: 런타임 잠금 파일 갱신"
+```
 
 단위·계약 테스트와 Spark Job import 테스트는 실제 API 키나 AWS 자격증명 없이 실행한다.
 KMA 수집과 S3 읽기·쓰기를 포함한 통합 테스트에서만 `.env`의 `KMA_API_KEY`,
@@ -93,13 +110,15 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 - Terraform으로 퍼블릭 차단·TLS·AES-256 암호화·수명주기를 적용한 S3, 파이프라인 경로
   최소 권한 IAM 정책, 월 비용 Budget을 정의한다. 실행 역할과 Access Key는 만들지 않는다.
 - GitHub Actions에서 Terraform 포맷과 provider 스키마 검증을 수행한다.
+- Airflow 2.7.3과 프로젝트 직접 의존성을 Python 3.11/Linux 기준으로 해석한 런타임 잠금
+  파일을 추가하고 Docker가 설치 후 `pip check`를 수행한다.
 
 ## 후속 개선 우선순위
 
 1. 비루트 임시 자격증명으로 Terraform plan을 검토하고 AWS 인프라를 최초 적용한다.
 2. 실제 배포 대상이 정해질 때만 CD를 추가한다.
-3. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
-   constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
+3. Docker Desktop의 WSL 연동을 활성화해 잠금된 Airflow 이미지를 실제 빌드하고 Compose
+   기동을 검증한다.
 4. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
 5. Slack 실패 처리 기준을 검토한다.
 
@@ -117,6 +136,8 @@ Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
 - 서울 리전의 임시 AWS S3 버킷에서도 같은 검증을 통과하고 객체와 버킷을 삭제함.
 - Terraform 1.16.3과 AWS provider 6.66.0으로 `fmt -check`와 `validate` 통과. 실제 plan과
   apply는 비루트 AWS 자격증명과 사용자별 변수 입력 전이라 미수행.
+- 잠금된 런타임 161개 패키지를 Python 3.11 임시 환경에 설치하고 의존성 검사, 전체
+  unittest, Spark Bronze → Silver → Gold 통합 테스트와 구문 컴파일 통과.
 - Compose YAML 파싱과 5개 Airflow 서비스의 데이터 마운트·빌드 경로 확인.
 - WSL Docker 연동이 비활성화되어 Compose CLI 검증·이미지 빌드·컨테이너 실행은 미수행.
   컨테이너 기준 Python 3.11에서의 통합 검증도 후속 확인이 필요하다.
