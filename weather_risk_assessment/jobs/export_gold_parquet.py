@@ -40,7 +40,17 @@ def main(argv: list[str] | None = None) -> None:
     try:
         latest = spark.read.format("delta").load(paths["latest_source"])
         daily = spark.read.format("delta").load(paths["daily_source"])
-        latest_out = latest.select("admin_names", "fcst_ts", "R_total", "risk_level")
+        latest_out = latest.select(
+            "admin_names",
+            "fcst_ts",
+            "R_total",
+            "R_rain",
+            "R_heat",
+            "R_wind",
+            "R_uv",
+            "R_typhoon",
+            "risk_level",
+        )
         daily_out = daily.select(
             "date",
             "admin_names",

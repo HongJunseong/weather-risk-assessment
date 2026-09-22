@@ -1,2 +1,0 @@
-tableauhyperapi>=0.0.201
-tableauserverclient>=0.26

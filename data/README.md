@@ -6,6 +6,6 @@
 - `admin_centroids.csv`: 행정구역 대표점
 - `unique_admin_centroids.csv`, `grid_latlon.parquet`: 수집 호출 목록과 격자
 - `live/`: 수집기 출력
-- `risk_latest.*`: 선택적 시각화 도구 입력·출력
+- `tableau_public.csv`: Tableau Public에 수동 업로드하는 공개용 생성 파일
 
 생성 파일은 Git에 추가하지 않는다. 저장소에 포함된 기존 경계 ZIP은 유지한다.

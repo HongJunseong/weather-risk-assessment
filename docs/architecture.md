@@ -18,7 +18,7 @@
     ├── collectors/           # 기상청 API 수집
     ├── risk/                 # 지표별 위험도와 종합 공식
     ├── jobs/                 # Spark Silver/Gold/Export 작업
-    ├── scripts/              # 행정구역 준비·Bronze 업로드·GeoJSON 도구
+    ├── scripts/              # 행정구역 준비·Bronze 업로드·Tableau CSV 준비
     ├── alerts/               # Slack 알림
     └── utils/                # 시간·좌표·수치 변환
 ```
@@ -27,9 +27,11 @@
 
 행정경계 → 중심점 CSV → 고유 격자/호출 목록 → 기상청 수집 → 로컬 `data/live/dt=.../`
 → Bronze 계약 검사 → S3 Bronze → Spark Silver → Gold latest/daily → S3 Parquet export → Slack.
+Tableau Public 데모는 운영 DAG와 분리하며, 내려받은 latest Parquet을 공개용 CSV로 변환해
+수동으로 게시한다.
 
-코드 패키지명과 기존 실행 태스크의 DAG/task ID는 유지한다(GeoJSON 태스크는 아래 설명처럼 제외). `scripts/`도 DAG에서 import하는 Python
-모듈이므로 패키지 내부에 둔다. 별도 `src/` 계층은 도입하지 않았다.
+코드 패키지명과 기존 실행 태스크의 DAG/task ID는 유지한다. `scripts/`도 DAG에서 import하는
+Python 모듈이므로 패키지 내부에 둔다. 별도 `src/` 계층은 도입하지 않았다.
 
 ## 경로와 데이터
 
@@ -42,10 +44,10 @@
 - S3 Bronze/Silver/Gold 경로와 위험도 공식은 이번 구조 변경에서 유지했다.
 - Bronze 업로드 전 계약은 `docs/data-contracts.md`에 정의한다. 계약 오류가 있으면 AWS
   호출 전에 실패하므로 손상된 실행 파티션이 S3에 생성되지 않는다.
-- GeoJSON 도구는 `nx`, `ny`를 포함한 로컬 `data/risk_latest.parquet`을 요구한다.
-  현재 S3 export는 이 좌표 키를 내보내지 않으므로 자동 DAG에서 제외했다.
-  입력을 별도로 준비한 후 `python3 -m weather_risk_assessment.scripts.make_kepler_geojson`으로 실행한다.
-- Tableau 태스크도 현재 비활성화 상태이며 별도 로컬 CSV가 필요하다.
+- Tableau Public용 CSV는 latest Parquet의 행정구역별 위험도와 `admin_centroids.csv`의
+  대표 좌표를 결합한다. Tableau 계정 인증과 게시는 운영 DAG에서 수행하지 않는다.
+- latest Parquet export에는 기존 컬럼을 유지하면서 `R_rain`, `R_heat`, `R_wind`, `R_uv`,
+  `R_typhoon`을 추가한다. 기존 export를 사용하는 환경은 다시 실행해야 새 컬럼을 얻는다.
 
 ## 기존 환경에서 이전
 

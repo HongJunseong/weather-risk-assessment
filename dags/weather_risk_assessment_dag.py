@@ -59,16 +59,6 @@ from weather_risk_assessment.collectors.uv_forecast import fetch_and_save_uv_wid
 from weather_risk_assessment.alerts.slack_alert import send_high_risk_alerts
 
 
-import logging
-
-# --- Tableau (선택적 사용) ---
-# csv_to_hyper / publish_overwrite 태스크를 활성화하려면
-# TABLEAU_* 환경변수를 .env에 설정하고 DAG 하단 주석을 해제하세요.
-CSV_PATH = str(DATA_ROOT / "risk_latest.csv")
-HYPER_PATH = str(DATA_ROOT / "risk_latest.hyper")
-
-
-
 default_args = {
     "owner": "junseong",
     "retries": 0,
@@ -186,74 +176,6 @@ with DAG(
         ),
     )
 
-    # 12) HYPER로 변환 후 Tableau Cloud에 게시할 때 사용
-    @task(task_id="csv_to_hyper")
-    def csv_to_hyper(csv_path: str = CSV_PATH, hyper_path: str = HYPER_PATH) -> str:
-        import pandas as pd
-        from tableauhyperapi import (
-            HyperProcess, Connection, TableDefinition, SqlType,
-            Telemetry, Inserter, CreateMode, TableName,
-        )
-
-        df = pd.read_csv(csv_path)
-
-        def infer_sqltype(s: pd.Series):
-            if pd.api.types.is_integer_dtype(s): return SqlType.big_int()
-            if pd.api.types.is_float_dtype(s):   return SqlType.double()
-            if pd.api.types.is_bool_dtype(s):    return SqlType.bool()
-            return SqlType.text()
-
-        table = TableName("Extract", "Extract")
-        cols = [TableDefinition.Column(str(c), infer_sqltype(df[c])) for c in df.columns]
-        tdef = TableDefinition(table_name=table, columns=cols)
-
-        if os.path.exists(hyper_path):
-            os.remove(hyper_path)
-
-        with HyperProcess(Telemetry.SEND_USAGE_DATA_TO_TABLEAU) as hp:
-            with Connection(hp.endpoint, database=hyper_path, create_mode=CreateMode.CREATE_AND_REPLACE) as conn:
-                conn.catalog.create_schema("Extract")
-                conn.catalog.create_table(tdef)
-                with Inserter(conn, tdef) as ins:
-                    ins.add_rows(df.itertuples(index=False, name=None))
-                    ins.execute()
-        logging.info("HYPER created: %s", hyper_path)
-        return hyper_path
-
-    @task(task_id="publish_overwrite")
-    def publish_overwrite(hyper_path: str):
-        import tableauserverclient as TSC
-
-        tableau_server       = os.environ["TABLEAU_SERVER"]
-        tableau_site_id      = os.environ.get("TABLEAU_SITE_ID", "")
-        tableau_pat_name     = os.environ["TABLEAU_PAT_NAME"]
-        tableau_pat_secret   = os.environ["TABLEAU_PAT_SECRET"]
-        tableau_project_name = os.environ.get("TABLEAU_PROJECT_NAME", "Default")
-        tableau_ds_name      = os.environ.get("TABLEAU_DS_NAME", "risk_latest")
-
-        server = TSC.Server(tableau_server, use_server_version=True)
-        auth = TSC.PersonalAccessTokenAuth(tableau_pat_name, tableau_pat_secret, site_id=tableau_site_id)
-        server.auth.sign_in(auth)
-        try:
-            project_id = None
-            for p in TSC.Pager(server.projects):
-                if p.name == tableau_project_name:
-                    project_id = p.id; break
-            if not project_id:
-                raise RuntimeError(f"Project not found: {tableau_project_name}")
-
-            exists = None
-            for ds in TSC.Pager(server.datasources):
-                if ds.name == tableau_ds_name:
-                    exists = ds; break
-
-            item = TSC.DatasourceItem(project_id=project_id, name=tableau_ds_name)
-            mode = TSC.Server.PublishMode.Overwrite if exists else TSC.Server.PublishMode.CreateNew
-            server.datasources.publish(item, hyper_path, mode=mode)
-            logging.info("Published to Tableau Cloud: %s (mode=%s)", tableau_ds_name, mode)
-        finally:
-            server.auth.sign_out()
-
     # HIGH 이상 지역 Slack 알림 (기존 task_id는 실행 이력 호환을 위해 유지)
     t_send_alerts = PythonOperator(
         task_id="send_high_risk_alerts_to_kafka",
@@ -264,10 +186,6 @@ with DAG(
     typhoon_task = collect_typhoon_forecast_wide(RUN_DT, RUN_DIR)
     uv_task = collect_uv_wide(RUN_DT, RUN_DIR)
 
-    # Hyper 변환 및 개시할 때 사용
-    # hyper = csv_to_hyper()
-    # pub = publish_overwrite(hyper)
-
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
     >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
-    >> build_gold_risk_daily >> export_gold_parquet >> t_send_alerts # >> hyper >> pub
+    >> build_gold_risk_daily >> export_gold_parquet >> t_send_alerts

@@ -6,10 +6,9 @@
 ![spark](https://img.shields.io/badge/Apache%20Spark-3.5.1-E25A1C)
 ![aws s3](https://img.shields.io/badge/AWS-S3%20Delta%20Lake-FF9900)
 ![slack](https://img.shields.io/badge/Slack-Alert-4A154B)
-![tableau](https://img.shields.io/badge/Tableau-Visualization-E97627)
-![kepler.gl](https://img.shields.io/badge/kepler.gl-Geospatial-00C2A0)
+![tableau public](https://img.shields.io/badge/Tableau%20Public-Portfolio-E97627)
 
-> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, **Tableau · kepler.gl을 통한 시각화를 선택적으로 연계**할 수 있습니다.
+> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, 공개 가능한 CSV로 변환해 **Tableau Public 포트폴리오 대시보드**에 연결할 수 있습니다.
 
 ---
 
@@ -18,12 +17,13 @@
 - [폴더 구조와 데이터 경로](docs/architecture.md)
 - [개발 환경·운영 안내·점검 결과](docs/maintenance.md)
 - [Bronze 데이터 계약](docs/data-contracts.md)
+- [Tableau Public 데모 제작](docs/tableau-public.md)
 - [Terraform AWS 인프라](infra/terraform/README.md)
 - [AI 작업 지침](AGENTS.md)
 
 ## 프로젝트 개요
 
-기상 데이터를 준실시간으로 수집·처리하여 태풍, UV 지수, 강수, 폭염, 바람 등 복합 지표 기반의 지역별 위험도를 산출하는 재해 대응 시스템입니다. Airflow 기반 데이터 파이프라인과 Slack 자동 알림을 통해 위험 상황을 즉시 인지하고 대응할 수 있습니다. 파이프라인 최종 산출물은 S3 Parquet으로 Export되며, Tableau · kepler.gl 등의 시각화 도구와 선택적으로 연계할 수 있도록 설계되었습니다.
+기상 데이터를 준실시간으로 수집·처리하여 태풍, UV 지수, 강수, 폭염, 바람 등 복합 지표 기반의 지역별 위험도를 산출하는 재해 대응 시스템입니다. Airflow 기반 데이터 파이프라인과 Slack 자동 알림을 통해 위험 상황을 즉시 인지하고 대응할 수 있습니다. 파이프라인 최종 산출물은 S3 Parquet으로 Export되며, Tableau Public 데모를 위한 공개용 CSV로 변환할 수 있습니다.
 
 ---
 
@@ -44,7 +44,7 @@
 - **Medallion Architecture**: 수집 데이터를 AWS S3 Delta Lake에 Bronze(원천) → Silver(정제·위험도) → Gold(집계·최신) 단계로 누적 저장하여 원천 보존과 단계별 재처리(backfill) 가능
 - **Spark 기반 데이터 처리**: Silver/Gold 단계 변환 및 집계를 PySpark로 처리. `mapInPandas`를 활용해 기존 pandas 기반 위험도 함수를 Spark 파이프라인에 통합
 - **Slack 자동 알림**: 파이프라인 완료 후 `R_total ≥ 0.6` (HIGH 이상) 지역이 감지되면 Slack Webhook으로 자동 알림 전송. 위험 지역 없을 시에도 "안전" 알림으로 파이프라인 정상 동작을 확인
-- **시각화 연계** *(선택)*: 파이프라인이 Export한 Parquet을 Tableau · kepler.gl에 연결하여 지역별·시간대별 위험도 변화를 직관적으로 확인 가능. DAG 내 Tableau 게시 태스크는 주석 처리되어 있으며, 필요 시 `.env`에 `TABLEAU_*` 환경변수를 설정해 활성화할 수 있음
+- **시각화 데모** *(선택)*: Export한 Parquet을 공개용 CSV로 변환해 Tableau Public에서 지역별 종합·지표별 위험도를 시각화. 계정 인증과 게시는 운영 DAG에서 분리
 
 ---
 
@@ -82,7 +82,7 @@ flowchart LR
   E --> F["Spark<br>Gold Aggregate"]
   F --> G["Gold<br>S3 Delta Lake<br>최신·일별 집계"]
   G --> H["Export<br>S3 Parquet"]
-  H -.->|선택| V["Tableau<br>kepler.gl"]
+  H -.->|공개 CSV| V["Tableau Public<br>포트폴리오 데모"]
   H --> S["Slack<br>위험 지역 자동 알림"]
 ```
 
@@ -108,21 +108,14 @@ flowchart LR
 ✅ 기상 위험 알림 | 현재 위험 지역 없음
 ```
 
-### Tableau 대시보드 *(선택적 연계)*
-Export된 Parquet을 Tableau에 연결하여 사용합니다. DAG의 `csv_to_hyper` / `publish_overwrite` 태스크는 기본적으로 비활성화 상태이며, `.env`에 `TABLEAU_*` 환경변수를 설정하여 Tableau Cloud에 자동 게시될 수 있도록 하였습니다.
+### Tableau Public 대시보드 *(포트폴리오 데모)*
+Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 CSV를 만듭니다. 운영 DAG는 Tableau 계정이나 인증정보를 사용하지 않으며, 무료 웹 편집기에서 CSV를 수동 게시합니다.
 
-- 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 풍속, 태풍 거리)
-- **툴팁**에 예측 시각 및 원천 지표 노출
+- 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 바람, 폭염, 태풍)
+- **툴팁**에 예측 시각 및 위험도 구성요소 노출
+- [시연용 예시값 CSV](examples/tableau/risk_dashboard_sample.csv) · [재현 절차](docs/tableau-public.md)
 
 ![Risk Score Tableau](https://github.com/user-attachments/assets/e86f12fc-85be-4ed5-b5c4-b874abe207ff)
-
-### kepler.gl *(선택적 연계)*
-kepler.gl 연계에는 좌표가 포함된 데이터가 필요합니다. 현재 S3 Export에는 좌표가 없으므로 별도 입력 준비가 필요합니다.
-
-- 행정구역 중심 좌표 기반 **지리 공간 시각화**
-- 전국 위험도 분포를 지도 위에서 직관적으로 확인
-
-<img width="520" height="500" alt="kepler gl" src="https://github.com/user-attachments/assets/632f96c4-10d7-4db5-99b8-bdec51826492" />
 
 ---
 
@@ -147,7 +140,7 @@ kepler.gl 연계에는 좌표가 포함된 데이터가 필요합니다. 현재 
 - **Processing**: pandas + PySpark 3.5.1
 - **Storage**: AWS S3 Delta Lake (Medallion Architecture)
 - **Alert**: Slack Incoming Webhook
-- **Visualization** *(optional)*: Tableau, kepler.gl
+- **Visualization** *(portfolio demo)*: Tableau Public
 - **Infrastructure**: Docker Compose + Terraform (AWS S3 · IAM · Budgets)
 
 ---
