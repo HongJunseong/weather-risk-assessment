@@ -3,6 +3,8 @@
 Tableau Cloud 자동 게시가 아니라 무료 Tableau Public에 공개 가능한 CSV를 수동으로
 업로드하는 데모다. Tableau 계정이나 인증정보는 파이프라인과 저장소에 넣지 않는다.
 
+- [게시된 Weather Risk Dashboard](https://public.tableau.com/views/WeatherRiskDashboard_17900819962470/WeatherRiskDashboard?:showVizHome=no)
+
 ## 데이터 준비
 
 화면을 먼저 구성할 때는 실제 예보가 아닌 시연용 값인
