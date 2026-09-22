@@ -72,6 +72,8 @@
 
 ## 전체 시스템 구성
 
+![Weather Risk Assessment 시스템 아키텍처](docs/assets/weather-risk-architecture.svg)
+
 ```mermaid
 flowchart LR
   A["KMA API<br>수동 실행 수집"] --> B["Airflow<br>Orchestration"]
@@ -119,6 +121,16 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 ---
 
 ## 기술적 도전 과제
+
+### 안정성 및 운영 기반 개선
+
+- **실행 격리·시간 정합성**: KST 실행 식별자를 수집부터 Silver까지 전달하고 실행별 저장 경로를 분리해 이전 실행 데이터의 혼입을 방지했습니다.
+- **데이터 품질 계약**: KMA 정상·오류 응답 fixture와 Bronze/Silver/Gold 검증으로 필수 컬럼, 키 중복, 시각, 위험도 범위 오류를 저장 전에 차단합니다.
+- **재현 가능한 실행·CI**: 런타임 의존성을 잠그고 GitHub Actions에서 단위 테스트, DAG import, Spark 변환, MinIO S3 통합, Docker 빌드와 Terraform 검증을 수행합니다.
+- **AWS 인프라 코드화**: Terraform으로 S3 보안·수명주기, 최소 권한 IAM 정책, 비용 Budget을 구성하고 S3 원격 state와 잠금을 적용했습니다.
+- **실패 감지·시각화**: Slack 웹훅 미설정·HTTP 오류를 태스크 실패로 전파하고 Tableau Public Demo를 공개했습니다. 게시 데이터는 264개 지점 × 8개 시각의 합성 데이터입니다.
+
+최종 운영 목표는 **1시간 주기 자동 수집·처리·알림**입니다. 현재 수동 실행과 `retries=0` 상태에서 검증했으며, 자동 스케줄·재시도 정책과 상시 운영용 CD를 후속 적용합니다. Tableau Demo는 실제 예보의 자동 갱신을 의미하지 않습니다.
 
 | 문제 | 접근 방식 | 결과 |
 |---|---|---|
