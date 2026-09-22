@@ -67,20 +67,20 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   정상 빈 응답 fixture로 회귀 테스트한다.
 - Silver/Gold 저장 전에 스키마, 위험도 범위, 지역·시각별 유일성을 검사한다.
 - 샘플 Bronze 5종과 행정구역 매핑으로 실제 Spark Silver·Gold 변환을 연결 검증한다.
+- GitHub Actions에서 Java 17·Python 3.11·PySpark 3.5.1 조합으로 통합 테스트를 실행한다.
 
 ## 후속 개선 우선순위
 
-1. GitHub Actions에 로컬 Spark 통합 테스트를 추가한다.
-2. MinIO로 S3 호환 Bronze 입출력을 검증한다.
-3. 실제 AWS S3에 소량 데이터로 최종 검증한다.
-4. Terraform으로 S3·IAM·Budget을 정의한다.
-5. 실제 배포 대상이 정해질 때만 CD를 추가한다.
-6. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
+1. MinIO로 S3 호환 Bronze 입출력을 검증한다.
+2. 실제 AWS S3에 소량 데이터로 최종 검증한다.
+3. Terraform으로 S3·IAM·Budget을 정의한다.
+4. 실제 배포 대상이 정해질 때만 CD를 추가한다.
+5. 동일 실행 식별자의 기준 시각 계산은 재현 가능하지만, KMA API의 과거 데이터 보존
    범위 밖에서는 원본 재수집이 불가능하므로 Bronze 보존·수명주기 정책을 정한다.
-7. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
+6. 런타임 의존성 대부분이 미고정이다. Airflow/Python/Spark 조합을 실제 빌드로 확인한 뒤
    constraints/lock과 CI를 도입한다. 이번 작업에서는 버전을 일괄 업그레이드하지 않았다.
-8. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
-9. Slack 실패 처리 기준을 검토한다.
+7. GeoJSON/Tableau가 요구하는 로컬 파일과 S3 export의 스키마·전달 방식을 정한다.
+8. Slack 실패 처리 기준을 검토한다.
 
 현재 점검은 코드·설정과 로컬 테스트를 기준으로 한다. 실제 API 수집, S3 데이터 검증,
 Delta 적재, Spark 컨테이너 실행, Slack 전송을 완료했다는 의미는 아니다.
