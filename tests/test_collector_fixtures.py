@@ -46,6 +46,20 @@ class CollectorFixtureTests(unittest.TestCase):
         self.assertEqual(float(wide.loc[0, "T1H"]), 2.4)
         self.assertEqual(wide.loc[0, "RN1"], "강수없음")
 
+    def test_kma_empty_items_are_a_valid_empty_response(self):
+        response = FakeResponse(load_fixture("empty_items_response.json"))
+        self.assertEqual(_parse_response(response), [])
+
+    def test_kma_no_data_response_is_distinguishable(self):
+        response = FakeResponse(load_fixture("no_data_response.json"))
+        with self.assertRaisesRegex(RuntimeError, "NO_DATA"):
+            _parse_response(response)
+
+    def test_kma_authentication_error_is_not_treated_as_empty(self):
+        response = FakeResponse(load_fixture("api_error_response.json"))
+        with self.assertRaisesRegex(RuntimeError, "SERVICE KEY"):
+            _parse_response(response)
+
     def test_short_forecast_parses_precipitation_text(self):
         response = FakeResponse(load_fixture("short_forecast_response.json"))
         payload = _parse_json_safely(response)

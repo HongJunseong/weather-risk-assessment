@@ -16,6 +16,7 @@ from urllib3.util.retry import Retry
 from tqdm import tqdm
 
 from weather_risk_assessment.paths import DATA_ROOT, SINK_DIR
+from weather_risk_assessment.collectors.kma_response import extract_kma_items
 from weather_risk_assessment.utils.latlon_to_grid import latlon_to_grid
 from weather_risk_assessment.utils.run_time import resolve_run_time
 
@@ -69,10 +70,8 @@ def _parse_response(r: requests.Response):
     except requests.exceptions.JSONDecodeError as e:
         raise RuntimeError(f"KMA JSON_DECODE head={head}") from e
 
-    header = js.get("response", {}).get("header", {})
-    if header.get("resultCode") != "00":
-        raise RuntimeError(f"KMA API error: {header}")
-    return js["response"]["body"]["items"]["item"]
+    items, _ = extract_kma_items(js)
+    return items
 
 # baseDate/baseTime 후보 (실황)
 def _iter_ncst_candidates(now: datetime | None = None, tries: int = 4) -> Iterable[Tuple[str, str]]:

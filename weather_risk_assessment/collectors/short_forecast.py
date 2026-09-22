@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------------- paths & env ----------------
 from weather_risk_assessment.paths import DATA_ROOT as DATA, SINK_DIR
+from weather_risk_assessment.collectors.kma_response import extract_kma_items
 from weather_risk_assessment.utils.run_time import resolve_run_time
 LIVE = SINK_DIR
 
@@ -224,12 +225,7 @@ def _fetch_vilage_singlepage(nx: int, ny: int, baseDate: str, baseTime: str) -> 
                 continue
             return pd.DataFrame()
 
-        try:
-            body = data["response"]["body"]
-            items = body["items"]["item"]
-            total = body.get("totalCount")
-        except Exception:
-            return pd.DataFrame()
+        items, total = extract_kma_items(data)
 
         # totalCount 감시: numOfRows(1000)보다 크면 경고만 로그
         if isinstance(total, int) and total > NUM_ROWS_SINGLE:
