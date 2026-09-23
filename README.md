@@ -42,7 +42,7 @@
 - **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선, 바람 등 지표별 위험도 계산 함수를 개발하고, 가중합과 최고값 기반으로 종합 위험도(`R_total`) 산출. 가중치는 `risk/config.py` 단일 파일에서 중앙 관리
 - **Medallion Architecture**: 수집 데이터를 AWS S3의 Bronze Parquet(원천) → Silver·Gold Delta Lake(정제·위험도·집계) 단계로 저장하여 원천 보존과 단계별 재처리(backfill) 가능
 - **Spark 기반 데이터 처리**: Silver/Gold 단계 변환 및 집계를 PySpark로 처리. `mapInPandas`를 활용해 기존 pandas 기반 위험도 함수를 Spark 파이프라인에 통합
-- **Slack 자동 알림**: 파이프라인 완료 후 `R_total ≥ 0.6` (HIGH 이상) 지역이 감지되면 Slack Webhook으로 자동 알림 전송. 위험 지역 없을 시에도 "안전" 알림으로 파이프라인 정상 동작을 확인
+- **Slack 자동 알림**: 파이프라인 완료 후 `R_total ≥ 0.6` (HIGH 이상) 지역을 알리고, 최종 재시도 후 실패한 태스크는 실행·로그 정보와 함께 통지. 위험 지역 없을 시에도 "안전" 알림으로 정상 동작을 확인
 - **시각화 데모** *(선택)*: Export한 Parquet을 공개용 CSV로 변환해 Tableau Public에서 지역별 종합·지표별 위험도를 시각화. 계정 인증과 게시는 운영 DAG에서 분리
 
 ---
@@ -84,12 +84,12 @@ flowchart LR
   F --> G["Gold<br>S3 Delta Lake<br>최신·일별 집계"]
   G --> H["Export<br>S3 Parquet"]
   H -.->|공개 CSV| V["Tableau Public<br>Demo"]
-  H --> S["Slack<br>위험 지역 자동 알림"]
+  H --> S["Slack<br>위험·실패 자동 알림"]
 ```
 
-- **Airflow DAG**: 매시 10분 자동 실행(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도
+- **Airflow DAG**: 매시 10분 자동 실행(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도하고 실행 전체를 55분으로 제한
 - **타임존**: `Asia/Seoul`(KST) 기준 시각 처리
-- **Slack 알림**: HIGH(`≥0.6`) / VERY_HIGH(`≥0.8`) 지역 감지 시 자동 전송
+- **Slack 알림**: HIGH(`≥0.6`) / VERY_HIGH(`≥0.8`) 지역과 최종 실패 태스크를 자동 전송
 
 ---
 
@@ -128,7 +128,7 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 - **데이터 품질 계약**: KMA 정상·오류 응답 fixture와 Bronze/Silver/Gold 검증으로 필수 컬럼, 키 중복, 시각, 위험도 범위 오류를 저장 전에 차단합니다.
 - **재현 가능한 실행·CI**: 런타임 의존성을 잠그고 GitHub Actions에서 단위 테스트, DAG import, Spark 변환, MinIO S3 통합, Docker 빌드와 Terraform 검증을 수행합니다.
 - **AWS 인프라 코드화**: Terraform으로 S3 보안·수명주기, 최소 권한 IAM 정책, 비용 Budget을 구성하고 S3 원격 state와 잠금을 적용했습니다.
-- **실패 감지·시각화**: Slack 웹훅 미설정·HTTP 오류를 태스크 실패로 전파하고 Tableau Public Demo를 공개했습니다. 게시 데이터는 264개 지점 × 8개 시각의 합성 데이터입니다.
+- **실패 감지·시각화**: 장기 실행을 55분에 종료하고 최종 실패 태스크를 Slack으로 알립니다. 웹훅 주소가 네트워크 오류에 노출되지 않도록 처리했으며 Tableau Public Demo를 공개했습니다. 게시 데이터는 264개 지점 × 8개 시각의 합성 데이터입니다.
 
 Airflow가 실행 중이면 **1시간 주기 자동 수집·처리·알림**을 수행합니다. 상시 운영을 위한 CD는 실제 배포 대상이 정해질 때 추가합니다. Tableau Demo는 실제 예보의 자동 갱신을 의미하지 않습니다.
 

@@ -4,7 +4,6 @@ import os
 import logging
 
 import requests
-import pandas as pd
 
 log = logging.getLogger(__name__)
 if not log.handlers:
@@ -33,7 +32,9 @@ def resolve_risk_path(path: str | None = None) -> str:
     return f"s3://{bucket}/gold_export/risk_latest"
 
 
-def load_high_risk_regions(path: str | None = None) -> pd.DataFrame:
+def load_high_risk_regions(path: str | None = None):
+    import pandas as pd
+
     src = resolve_risk_path(path)
     log.info("Reading risk data from %s", src)
 
@@ -53,7 +54,12 @@ def _post_slack(text: str) -> None:
     webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
     if not webhook_url:
         raise ValueError("SLACK_WEBHOOK_URL is required to send Slack notifications.")
-    resp = requests.post(webhook_url, json={"text": text}, timeout=10)
+    try:
+        resp = requests.post(webhook_url, json={"text": text}, timeout=10)
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"Slack notification failed. error={type(exc).__name__}"
+        ) from None
     if resp.status_code == 200:
         log.info("Slack notification sent.")
     else:
@@ -63,6 +69,8 @@ def _post_slack(text: str) -> None:
 
 
 def send_high_risk_alerts(path: str | None = None) -> int:
+    import pandas as pd
+
     df = load_high_risk_regions(path)
 
     if df.empty:
@@ -84,6 +92,21 @@ def send_high_risk_alerts(path: str | None = None) -> int:
     _post_slack(text)
 
     return len(df)
+
+
+def send_task_failure_alert(context: dict) -> None:
+    task_instance = context["task_instance"]
+    text = (
+        "❌ *기상 위험 파이프라인 실패*\n"
+        f"DAG: `{task_instance.dag_id}`\n"
+        f"Task: `{task_instance.task_id}`\n"
+        f"Run: `{task_instance.run_id}`\n"
+        f"<{task_instance.log_url}|Airflow 로그 열기>"
+    )
+    try:
+        _post_slack(text)
+    except Exception as exc:
+        log.error("Unable to send task failure alert (%s).", type(exc).__name__)
 
 
 def main():

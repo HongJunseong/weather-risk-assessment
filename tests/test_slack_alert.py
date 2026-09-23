@@ -1,8 +1,15 @@
 import os
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from weather_risk_assessment.alerts.slack_alert import _post_slack, resolve_risk_path
+import requests
+
+from weather_risk_assessment.alerts.slack_alert import (
+    _post_slack,
+    resolve_risk_path,
+    send_task_failure_alert,
+)
 
 
 class SlackAlertPathTests(unittest.TestCase):
@@ -61,6 +68,42 @@ class SlackDeliveryTests(unittest.TestCase):
                 _post_slack("alert")
 
         self.assertNotIn("secret", str(raised.exception))
+
+    @patch("weather_risk_assessment.alerts.slack_alert.requests.post")
+    def test_network_error_fails_without_exposing_webhook(self, post):
+        post.side_effect = requests.ConnectionError("https://hooks.example/secret")
+
+        environment = {"SLACK_WEBHOOK_URL": "https://hooks.example/secret"}
+        with patch.dict(os.environ, environment, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "ConnectionError") as raised:
+                _post_slack("alert")
+
+        self.assertNotIn("secret", str(raised.exception))
+
+    @patch("weather_risk_assessment.alerts.slack_alert._post_slack")
+    def test_task_failure_alert_contains_airflow_context(self, post):
+        task_instance = SimpleNamespace(
+            dag_id="weather_risk_assessment",
+            task_id="collect_short_fcst",
+            run_id="scheduled__2026-09-23T01:10:00+00:00",
+            log_url="http://airflow.example/log",
+        )
+
+        send_task_failure_alert({"task_instance": task_instance})
+
+        message = post.call_args.args[0]
+        self.assertIn("collect_short_fcst", message)
+        self.assertIn(task_instance.run_id, message)
+        self.assertIn(task_instance.log_url, message)
+
+    @patch("weather_risk_assessment.alerts.slack_alert._post_slack")
+    def test_task_failure_callback_does_not_mask_original_failure(self, post):
+        post.side_effect = RuntimeError("delivery failed")
+        task_instance = SimpleNamespace(
+            dag_id="dag", task_id="task", run_id="run", log_url="http://log"
+        )
+
+        send_task_failure_alert({"task_instance": task_instance})
 
 
 if __name__ == "__main__":

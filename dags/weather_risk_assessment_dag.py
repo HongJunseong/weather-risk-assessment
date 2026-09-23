@@ -57,13 +57,17 @@ from weather_risk_assessment.collectors.ultra_nowcast_shortfcst import run_once 
 from weather_risk_assessment.collectors.short_forecast import collect_short_fcst
 from weather_risk_assessment.collectors.typhoon_forecast import fetch_typhoon_forecast_wide
 from weather_risk_assessment.collectors.uv_forecast import fetch_and_save_uv_wide
-from weather_risk_assessment.alerts.slack_alert import send_high_risk_alerts
+from weather_risk_assessment.alerts.slack_alert import (
+    send_high_risk_alerts,
+    send_task_failure_alert,
+)
 
 
 default_args = {
     "owner": "junseong",
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
+    "on_failure_callback": send_task_failure_alert,
 }
 
 with DAG(
@@ -74,6 +78,7 @@ with DAG(
     schedule="10 * * * *",
     catchup=False,
     max_active_runs=1,
+    dagrun_timeout=timedelta(minutes=55),
     tags=["weather","kma","risk"],
 ) as dag:
 

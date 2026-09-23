@@ -1,5 +1,6 @@
 import importlib.util
 import os
+from datetime import timedelta
 from pathlib import Path
 import tempfile
 import unittest
@@ -30,10 +31,12 @@ class DagImportTests(unittest.TestCase):
             self.assertEqual(dag.schedule_interval, "10 * * * *")
             self.assertFalse(dag.catchup)
             self.assertEqual(dag.max_active_runs, 1)
+            self.assertEqual(dag.dagrun_timeout, timedelta(minutes=55))
             self.assertTrue(all(task.retries == 2 for task in dag.tasks))
             self.assertTrue(
                 all(task.retry_delay.total_seconds() == 300 for task in dag.tasks)
             )
+            self.assertTrue(all(callable(task.on_failure_callback) for task in dag.tasks))
             self.assertEqual(
                 set(dag.task_ids),
                 {
