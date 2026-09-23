@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pandas as pd
 import pendulum
 
-from weather_risk_assessment.collectors import short_forecast
+from weather_risk_assessment.collectors import short_forecast, uv_forecast
 from weather_risk_assessment.collectors.short_forecast import (
     _parse_json_safely,
     _postprocess_wide,
@@ -104,3 +104,28 @@ class CollectorFixtureTests(unittest.TestCase):
     def test_uv_offsets_are_numeric(self):
         offsets = _parse_h_offsets(load_fixture("uv_forecast_item.json"))
         self.assertEqual(offsets, {0: 0.0, 3: 1.0, 6: 2.0, 9: 3.0})
+
+    def test_uv_v5_request_returns_items(self):
+        item = load_fixture("uv_forecast_item.json")
+        response = FakeResponse({
+            "response": {
+                "header": {"resultCode": "00"},
+                "body": {"items": {"item": [item]}},
+            }
+        })
+        with (
+            patch.object(uv_forecast, "API_KEY", "test-key"),
+            patch.object(uv_forecast.session, "get", return_value=response) as get,
+        ):
+            self.assertEqual(uv_forecast._http("1100000000", "2025010206"), [item])
+        self.assertTrue(get.call_args.args[0].endswith("/LivingWthrIdxServiceV5/getUVIdxV5"))
+
+    def test_uv_api_error_is_not_empty_data(self):
+        payload = {"OpenAPI_ServiceResponse": {
+            "cmmMsgHeader": {"errMsg": "NO_OPENAPI_SERVICE_ERROR"}
+        }}
+        with self.assertRaisesRegex(RuntimeError, "NO_OPENAPI_SERVICE_ERROR"):
+            uv_forecast._items_from_text(json.dumps(payload))
+        self.assertEqual(uv_forecast._items_from_text(json.dumps({
+            "response": {"header": {"resultCode": "03"}, "body": {"items": {}}}
+        })), [])

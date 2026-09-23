@@ -25,8 +25,8 @@ DEFAULT_OUT = LIVE / "uv.parquet"
 
 # 환경변수 (없으면 기본값 사용)
 BASE_URL   = os.getenv("KMA_BASE_URL", "https://apis.data.go.kr/1360000").rstrip("/")
-SVC_PATH   = os.getenv("KMA_UV_SVC_PATH", "LivingWthrIdxServiceV4").strip("/")
-EP_UV      = os.getenv("KMA_UV_EP", "getUVIdxV4").strip()
+SVC_PATH   = os.getenv("KMA_UV_SVC_PATH", "LivingWthrIdxServiceV5").strip("/")
+EP_UV      = os.getenv("KMA_UV_EP", "getUVIdxV5").strip()
 API_KEY    = os.getenv("KMA_API_KEY", "").strip()
 FORCE_HTTP = os.getenv("KMA_FORCE_HTTP", "0") == "1"             # HTTP 강제 여부
 SKIP_SSL   = os.getenv("KMA_SKIP_SSL_VERIFY", "0") == "1"        # SSL 검증 생략 여부
@@ -121,13 +121,26 @@ def _items_from_text(text: str) -> List[dict]:
     # JSON 파싱 우선
     try:
         js = json.loads(text or "")
+        error = js.get("OpenAPI_ServiceResponse", {}).get("cmmMsgHeader", {})
+        if error:
+            code = error.get("errMsg") or error.get("returnReasonCode") or "UNKNOWN"
+            raise RuntimeError(f"KMA UV API {code}")
+        header = js.get("response", {}).get("header", {})
+        code = str(header.get("resultCode", "00"))
+        if code not in ("00", "03"):
+            raise RuntimeError(f"KMA UV API {code}")
         it = js.get("response", {}).get("body", {}).get("items", {}).get("item", [])
         return [it] if isinstance(it, dict) else (it or [])
+    except RuntimeError:
+        raise
     except Exception:
         pass
     # XML 파싱 (쿼터 초과 탐지 포함)
     try:
         root = ET.fromstring(text or "")
+        error = root.findtext(".//errMsg")
+        if error:
+            raise RuntimeError(f"KMA UV API {error}")
         ret = (root.findtext(".//returnAuthMsg") or
                root.findtext(".//returnReasonCode") or "")
         if "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR" in ret:
@@ -144,8 +157,7 @@ def _items_from_text(text: str) -> List[dict]:
 def _http(area_no: str, ymdh: str) -> List[dict]:
     """KMA API 호출 → 해당 행정구역(area_no)의 특정 발표시각 데이터 반환."""
     if not API_KEY:
-        log.error("KMA_API_KEY 비어있음")
-        return []
+        raise RuntimeError("KMA_API_KEY is required for UV collection")
     params = {
         "serviceKey": API_KEY,
         "dataType": "JSON",
@@ -158,11 +170,14 @@ def _http(area_no: str, ymdh: str) -> List[dict]:
         url = url.replace("https://", "http://")
     try:
         r = session.get(url, params=params, timeout=15, verify=not SKIP_SSL)
-        return _items_from_text(r.text or "")
+        items = _items_from_text(r.text or "")
+        if r.status_code >= 400:
+            raise RuntimeError(f"KMA UV HTTP {r.status_code}")
+        return items
     except RuntimeError:
         raise
     except Exception as e:
-        log.warning(f"[UV] HTTP error ({area_no},{ymdh}): {e}")
+        log.warning("[UV] HTTP error (%s,%s): %s", area_no, ymdh, type(e).__name__)
         return []
 
 def _parse_h_offsets(item: dict) -> Dict[int, float]:
