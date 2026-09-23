@@ -129,3 +129,33 @@ class CollectorFixtureTests(unittest.TestCase):
         self.assertEqual(uv_forecast._items_from_text(json.dumps({
             "response": {"header": {"resultCode": "03"}, "body": {"items": {}}}
         })), [])
+        self.assertEqual(uv_forecast._items_from_text(json.dumps({
+            "response": {"header": {"resultCode": "99", "resultMsg": "검색결과가 없습니다. [2811000000]"}}
+        })), [])
+        with self.assertRaisesRegex(RuntimeError, "KMA UV API 99"):
+            uv_forecast._items_from_text(json.dumps({
+                "response": {"header": {"resultCode": "99", "resultMsg": "UNKNOWN_SYSTEM_ERROR"}}
+            }))
+
+    def test_uv_find_base_extracts_base_date_from_item(self):
+        item = {
+            "areaNo": "1100000000",
+            "date": "2026092312",
+            "h0": "7",
+            "h3": "4",
+        }
+        response = FakeResponse({
+            "response": {
+                "header": {"resultCode": "00"},
+                "body": {"items": {"item": [item]}},
+            }
+        })
+        anchor = pendulum.datetime(2026, 9, 23, 13, 0, tz="Asia/Seoul")
+        with (
+            patch.object(uv_forecast, "API_KEY", "test-key"),
+            patch.object(uv_forecast.session, "get", return_value=response),
+        ):
+            base_dt, rel = uv_forecast._find_base("1100000000", anchor, back_hours=12)
+        self.assertIsNotNone(base_dt)
+        self.assertEqual(base_dt.strftime("%Y%m%d%H"), "2026092312")
+        self.assertEqual(rel, {0: 7.0, 3: 4.0})

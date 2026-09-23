@@ -127,7 +127,12 @@ def _items_from_text(text: str) -> List[dict]:
             raise RuntimeError(f"KMA UV API {code}")
         header = js.get("response", {}).get("header", {})
         code = str(header.get("resultCode", "00"))
-        if code not in ("00", "03"):
+        msg = str(header.get("resultMsg", ""))
+        if code in ("00", "03"):
+            pass
+        elif code == "99" and ("검색결과가 없습니다" in msg or "NO_DATA" in msg.upper()):
+            return []
+        else:
             raise RuntimeError(f"KMA UV API {code}")
         it = js.get("response", {}).get("body", {}).get("items", {}).get("item", [])
         return [it] if isinstance(it, dict) else (it or [])
@@ -205,14 +210,26 @@ def _find_base(area_no: str, anchor: pendulum.DateTime, back_hours: int = 48) ->
     anchor 시각부터 최대 back_hours 시간 전까지 역으로 탐색하며,
     실제 발표시각(base_dt)과 상대오프셋 데이터 반환.
     """
-    for h in range(0, back_hours + 1):
+    hours_to_try = [0] + list(range(3, back_hours + 1, 3))
+    for h in hours_to_try:
         cand = anchor.subtract(hours=h).replace(minute=0, second=0, microsecond=0)
         items = _http(area_no, cand.format("YYYYMMDDHH"))
         rel: Dict[int, float] = {}
+        base_cand = cand
         for it in items:
             rel.update(_parse_h_offsets(it))
+            date_str = str(it.get("date") or "").strip()
+            if len(date_str) == 10:
+                try:
+                    base_cand = pendulum.from_format(date_str, "YYYYMMDDHH", tz="Asia/Seoul")
+                except Exception:
+                    pass
         if rel:
-            return cand, rel
+            return base_cand, rel
+        # V5는 anchor 시각 기준 최신 데이터를 자동 반환하므로,
+        # anchor 시점에도 결과가 없으면(검색결과 없음) 해당 area_no는 DB에 미등록된 지역임.
+        if h == 0 and not items:
+            break
     return None, {}
 
 def _rel_to_series(base_dt: pendulum.DateTime, rel: Dict[int, float]) -> pd.Series:
@@ -273,11 +290,27 @@ def fetch_and_save_uv_wide(
     log.info("[UV] target hours = %s", ", ".join(pd.Index(targets).strftime("%Y%m%d %H:%M").tolist()))
 
     rows: List[Tuple[int, int, str, str, int]] = []
+    base_cache: Dict[str, Tuple[Optional[pendulum.DateTime], Dict[int, float]]] = {}
+
+    def _get_base_with_fallback(code: str) -> Tuple[Optional[pendulum.DateTime], Dict[int, float]]:
+        if code not in base_cache:
+            base_dt, offsets = _find_base(code, anchor, back_hours=48)
+            # 하위 시군구에 데이터가 없으면 광역시도 코드(상위 2자리 + '00000000')로 1회 폴백
+            if not base_dt and len(code) == 10 and not code.endswith("00000000"):
+                metro_code = code[:2] + "00000000"
+                if metro_code not in base_cache:
+                    base_cache[metro_code] = _find_base(metro_code, anchor, back_hours=48)
+                m_base, m_offsets = base_cache[metro_code]
+                if m_base:
+                    log.info("[UV] area=%s 데이터 없음 -> 광역코드 %s 대체", code, metro_code)
+                    base_dt, offsets = m_base, m_offsets
+            base_cache[code] = (base_dt, offsets)
+        return base_cache[code]
 
     # 각 행정구역(admin_code)별로 데이터 수집
     for area_no, sub in call.groupby("admin_code"):
         try:
-            base, rel = _find_base(str(area_no), anchor, back_hours=48)
+            base, rel = _get_base_with_fallback(str(area_no))
         except RuntimeError as e:
             log.error(f"[UV] quota/critical error: {e}")
             raise
