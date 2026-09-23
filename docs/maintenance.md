@@ -76,9 +76,14 @@ cp .env.example .env
 unzip data/border/N3A_G0100000.zip -d data/border
 # data/border/N3A_G0100000.shp 및 동반 파일이 있는지 확인
 
-docker compose --env-file .env -f docker/docker-compose.yaml config --quiet
-docker compose --env-file .env -f docker/docker-compose.yaml up -d --build --remove-orphans
+cd docker
+docker compose config --quiet
+docker compose up -d --build --remove-orphans
 ```
+
+`docker/.env`는 저장소 루트 `.env`를 가리킨다. 현재 DAG에는 deferrable 태스크가 없어
+triggerer를 실행하지 않으며, 필요해지면 서비스를 다시 추가한다. 기존 triggerer 컨테이너는
+`--remove-orphans`로 정리하되 PostgreSQL 볼륨은 유지한다.
 
 Airflow UI는 `http://localhost:8080`이다. DAG는 기상청 자료 게시 시간을 고려해 매시
 10분에 실행하며(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도한다. 과거 실행은

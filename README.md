@@ -178,7 +178,8 @@ cp .env.example .env
 
 # 3) Airflow 컨테이너 실행
 unzip data/border/N3A_G0100000.zip -d data/border
-docker compose --env-file .env -f docker/docker-compose.yaml up -d --build --remove-orphans
+cd docker
+docker compose up -d --build --remove-orphans
 
 # 4) Airflow UI 접속
 # http://localhost:8080  (ID: airflow / PW: airflow)
