@@ -7,3 +7,6 @@ requests
 tenacity
 tqdm
 boto3
+python-dotenv
+geopandas
+pyogrio
