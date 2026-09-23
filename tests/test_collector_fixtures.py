@@ -159,3 +159,9 @@ class CollectorFixtureTests(unittest.TestCase):
         self.assertIsNotNone(base_dt)
         self.assertEqual(base_dt.strftime("%Y%m%d%H"), "2026092312")
         self.assertEqual(rel, {0: 7.0, 3: 4.0})
+
+    def test_uv_area_code_alias_mapping(self):
+        # 2026년 행정구역 개편 코드 매핑 검증
+        self.assertEqual(uv_forecast.AREA_CODE_ALIAS["2911000000"], "1221000000")  # 광주 동구
+        self.assertEqual(uv_forecast.AREA_CODE_ALIAS["4611000000"], "1211000000")  # 전남 목포시
+        self.assertEqual(uv_forecast.AREA_CODE_ALIAS["2811000000"], "2812500000")  # 인천 제물포구

@@ -36,6 +36,44 @@ HORIZON_H  = int(os.getenv("UV_HORIZON_HOURS", "6"))             # 예보 범위
 logging.basicConfig(level=LOG_LEVEL, format="%(message)s")
 log = logging.getLogger("uv_forecast")
 
+# 2026년 행정구역 개편(전남광주통합특별시 12, 인천 행정구역 개편 28) 반영 매핑 테이블
+# 국토정보플랫폼 2024년 SHP 법정동코드 -> 기상청 LivingWthrIdxServiceV5 최신 지점코드
+AREA_CODE_ALIAS: Dict[str, str] = {
+    # 인천 (중구/동구 -> 제물포구 28125, 서구 분구 -> 서구 28290)
+    "2811000000": "2812500000",
+    "2814000000": "2812500000",
+    "2826000000": "2829000000",
+    # 광주 (전남광주통합특별시 12)
+    "2911000000": "1221000000",  # 동구
+    "2914000000": "1224000000",  # 서구
+    "2915500000": "1227000000",  # 남구
+    "2917000000": "1230000000",  # 북구
+    "2920000000": "1233000000",  # 광산구
+    # 전남 (전남광주통합특별시 12)
+    "4611000000": "1211000000",  # 목포시
+    "4613000000": "1213000000",  # 여수시
+    "4615000000": "1215000000",  # 순천시
+    "4617000000": "1217000000",  # 나주시
+    "4623000000": "1219000000",  # 광양시
+    "4671000000": "1271000000",  # 담양군
+    "4672000000": "1272000000",  # 곡성군
+    "4673000000": "1273000000",  # 구례군
+    "4677000000": "1274000000",  # 고흥군
+    "4678000000": "1275000000",  # 보성군
+    "4679000000": "1276000000",  # 화순군
+    "4680000000": "1277000000",  # 장흥군
+    "4681000000": "1278000000",  # 강진군
+    "4682000000": "1279000000",  # 해남군
+    "4683000000": "1280000000",  # 영암군
+    "4684000000": "1281000000",  # 무안군
+    "4686000000": "1282000000",  # 함평군
+    "4687000000": "1283000000",  # 영광군
+    "4688000000": "1284000000",  # 장성군
+    "4689000000": "1285000000",  # 완도군
+    "4690000000": "1286000000",  # 진도군
+    "4691000000": "1287000000",  # 신안군
+}
+
 # ---------- HTTP ----------
 # KMA API 호출 세션 설정 (재시도 로직 포함)
 session = requests.Session()
@@ -293,19 +331,20 @@ def fetch_and_save_uv_wide(
     base_cache: Dict[str, Tuple[Optional[pendulum.DateTime], Dict[int, float]]] = {}
 
     def _get_base_with_fallback(code: str) -> Tuple[Optional[pendulum.DateTime], Dict[int, float]]:
-        if code not in base_cache:
-            base_dt, offsets = _find_base(code, anchor, back_hours=48)
+        target_code = AREA_CODE_ALIAS.get(code, code)
+        if target_code not in base_cache:
+            base_dt, offsets = _find_base(target_code, anchor, back_hours=48)
             # 하위 시군구에 데이터가 없으면 광역시도 코드(상위 2자리 + '00000000')로 1회 폴백
-            if not base_dt and len(code) == 10 and not code.endswith("00000000"):
-                metro_code = code[:2] + "00000000"
+            if not base_dt and len(target_code) == 10 and not target_code.endswith("00000000"):
+                metro_code = target_code[:2] + "00000000"
                 if metro_code not in base_cache:
                     base_cache[metro_code] = _find_base(metro_code, anchor, back_hours=48)
                 m_base, m_offsets = base_cache[metro_code]
                 if m_base:
-                    log.info("[UV] area=%s 데이터 없음 -> 광역코드 %s 대체", code, metro_code)
+                    log.info("[UV] area=%s 데이터 없음 -> 광역코드 %s 대체", target_code, metro_code)
                     base_dt, offsets = m_base, m_offsets
-            base_cache[code] = (base_dt, offsets)
-        return base_cache[code]
+            base_cache[target_code] = (base_dt, offsets)
+        return base_cache[target_code]
 
     # 각 행정구역(admin_code)별로 데이터 수집
     for area_no, sub in call.groupby("admin_code"):
