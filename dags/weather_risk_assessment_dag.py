@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import os
+from datetime import timedelta
 from pathlib import Path
 import pendulum
 
@@ -61,22 +62,22 @@ from weather_risk_assessment.alerts.slack_alert import send_high_risk_alerts
 
 default_args = {
     "owner": "junseong",
-    "retries": 0,
-    #"retry_delay": timedelta(minutes=1),
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
 }
 
 with DAG(
     dag_id="weather_risk_assessment",
     default_args=default_args,
     start_date=pendulum.datetime(2025, 8, 10, tz=KST),
-    #schedule="*/30 * * * *",
-    schedule = None,
+    # 기상청의 매시 자료 게시 시간을 고려해 정각보다 10분 늦게 실행한다.
+    schedule="10 * * * *",
     catchup=False,
     max_active_runs=1,
     tags=["weather","kma","risk"],
 ) as dag:
 
-    RUN_DT = "{{ data_interval_start.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
+    RUN_DT = "{{ data_interval_end.in_timezone('Asia/Seoul').strftime('%Y%m%d%H') }}"
     RUN_DIR = f"{SINK_DIR}/dt={RUN_DT}"
     
     # 1) 행정 구역 중심점 생성 (lat, lon)

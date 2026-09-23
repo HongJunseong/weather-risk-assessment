@@ -79,8 +79,9 @@ docker compose --env-file .env -f docker/docker-compose.yaml config --quiet
 docker compose --env-file .env -f docker/docker-compose.yaml up -d --build
 ```
 
-Airflow UI는 `http://localhost:8080`이다. 현재 DAG는 `schedule=None`, `retries=0`이므로
-수동 실행한다. 시간별 자동화 및 태스크 재시도는 향후 운영 정책을 결정한 후 설정한다.
+Airflow UI는 `http://localhost:8080`이다. DAG는 기상청 자료 게시 시간을 고려해 매시
+10분에 실행하며(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도한다. 과거 실행은
+자동으로 소급하지 않고(`catchup=False`), 한 번에 하나의 DAG 실행만 허용한다.
 KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한다.
 
 ## 이번 점검에서 정리한 사항
@@ -119,6 +120,8 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   실행되므로 전송 실패가 이미 생성된 데이터에는 영향을 주지 않는다.
 - 사용하지 않는 Tableau Cloud/Hyper와 kepler.gl 코드를 제거하고, 운영 DAG와 분리된
   Tableau Public용 CSV 변환기와 공개 샘플을 둔다.
+- Airflow DAG를 매시 10분 자동 실행으로 전환하고 실패 작업에 5분 간격 2회 재시도를
+  적용했다. 실행별 경로는 스케줄 구간의 KST 종료 시각을 기준으로 유지한다.
 
 ## 후속 개선 우선순위
 

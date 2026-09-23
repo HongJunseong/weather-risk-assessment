@@ -27,6 +27,13 @@ class DagImportTests(unittest.TestCase):
 
             dag = dag_bag.dags.get("weather_risk_assessment")
             self.assertIsNotNone(dag)
+            self.assertEqual(dag.schedule_interval, "10 * * * *")
+            self.assertFalse(dag.catchup)
+            self.assertEqual(dag.max_active_runs, 1)
+            self.assertTrue(all(task.retries == 2 for task in dag.tasks))
+            self.assertTrue(
+                all(task.retry_delay.total_seconds() == 300 for task in dag.tasks)
+            )
             self.assertEqual(
                 set(dag.task_ids),
                 {

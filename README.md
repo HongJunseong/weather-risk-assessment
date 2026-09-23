@@ -8,7 +8,7 @@
 ![slack](https://img.shields.io/badge/Slack-Alert-4A154B)
 ![tableau public](https://img.shields.io/badge/Tableau%20Public-Demo-E97627)
 
-> **요약**: 기상청(KMA) API를 수동 실행으로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3 Delta Lake에 Medallion Architecture(Bronze → Silver → Gold)로 적재되며, Spark를 통해 단계별로 정제·집계됩니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, 공개 가능한 CSV로 변환해 **Tableau Public 대시보드**로 시각화할 수 있습니다.
+> **요약**: 기상청(KMA) API를 1시간 주기로 수집하여 지역별 기상 위험도를 자동 산출하는 파이프라인입니다. 수집된 데이터는 AWS S3의 Medallion Architecture(Bronze → Silver → Gold)에 적재되며, Bronze 원천 데이터와 Silver·Gold Delta Lake를 Spark로 단계별 정제·집계합니다. 위험도가 임계값을 초과하면 **Slack으로 자동 알림**이 전송됩니다. 산출된 결과는 S3 Parquet으로 Export되며, 공개 가능한 CSV로 변환해 **Tableau Public 대시보드**로 시각화할 수 있습니다.
 
 ---
 
@@ -40,7 +40,7 @@
 
 - **데이터 파이프라인 구축**: Airflow DAG을 통해 기상청 API에서 데이터를 수집하고 원천 데이터를 표준 스키마로 정제
 - **위험도 산출 로직 구현**: 강수, 폭염, 태풍, 자외선, 바람 등 지표별 위험도 계산 함수를 개발하고, 가중합과 최고값 기반으로 종합 위험도(`R_total`) 산출. 가중치는 `risk/config.py` 단일 파일에서 중앙 관리
-- **Medallion Architecture**: 수집 데이터를 AWS S3 Delta Lake에 Bronze(원천) → Silver(정제·위험도) → Gold(집계·최신) 단계로 누적 저장하여 원천 보존과 단계별 재처리(backfill) 가능
+- **Medallion Architecture**: 수집 데이터를 AWS S3의 Bronze Parquet(원천) → Silver·Gold Delta Lake(정제·위험도·집계) 단계로 저장하여 원천 보존과 단계별 재처리(backfill) 가능
 - **Spark 기반 데이터 처리**: Silver/Gold 단계 변환 및 집계를 PySpark로 처리. `mapInPandas`를 활용해 기존 pandas 기반 위험도 함수를 Spark 파이프라인에 통합
 - **Slack 자동 알림**: 파이프라인 완료 후 `R_total ≥ 0.6` (HIGH 이상) 지역이 감지되면 Slack Webhook으로 자동 알림 전송. 위험 지역 없을 시에도 "안전" 알림으로 파이프라인 정상 동작을 확인
 - **시각화 데모** *(선택)*: Export한 Parquet을 공개용 CSV로 변환해 Tableau Public에서 지역별 종합·지표별 위험도를 시각화. 계정 인증과 게시는 운영 DAG에서 분리
@@ -66,7 +66,7 @@
   가중치: 강수 28% | 바람 22% | 태풍 20% | 폭염 18% | UV 12%
   ```
 
-- **저장**: AWS S3 Delta Lake (Bronze / Silver / Gold / Export)
+- **저장**: AWS S3 (Bronze·Export Parquet / Silver·Gold Delta Lake)
 
 ---
 
@@ -76,8 +76,8 @@
 
 ```mermaid
 flowchart LR
-  A["KMA API<br>수동 실행 수집"] --> B["Airflow<br>Orchestration"]
-  B --> C["Bronze<br>S3 Delta Lake<br>원천 데이터"]
+  A["KMA API<br>1시간 주기 수집"] --> B["Airflow<br>Orchestration"]
+  B --> C["Bronze<br>S3 Parquet<br>원천 데이터"]
   C --> D["Spark<br>Silver Transform"]
   D --> E["Silver<br>S3 Delta Lake<br>정제 + 위험도"]
   E --> F["Spark<br>Gold Aggregate"]
@@ -87,7 +87,7 @@ flowchart LR
   H --> S["Slack<br>위험 지역 자동 알림"]
 ```
 
-- **Airflow DAG**: 현재 수동 실행(`schedule=None`), 태스크 재시도 없음(`retries=0`)
+- **Airflow DAG**: 매시 10분 자동 실행(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도
 - **타임존**: `Asia/Seoul`(KST) 기준 시각 처리
 - **Slack 알림**: HIGH(`≥0.6`) / VERY_HIGH(`≥0.8`) 지역 감지 시 자동 전송
 
@@ -130,7 +130,7 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 - **AWS 인프라 코드화**: Terraform으로 S3 보안·수명주기, 최소 권한 IAM 정책, 비용 Budget을 구성하고 S3 원격 state와 잠금을 적용했습니다.
 - **실패 감지·시각화**: Slack 웹훅 미설정·HTTP 오류를 태스크 실패로 전파하고 Tableau Public Demo를 공개했습니다. 게시 데이터는 264개 지점 × 8개 시각의 합성 데이터입니다.
 
-최종 운영 목표는 **1시간 주기 자동 수집·처리·알림**입니다. 현재 수동 실행과 `retries=0` 상태에서 검증했으며, 자동 스케줄·재시도 정책과 상시 운영용 CD를 후속 적용합니다. Tableau Demo는 실제 예보의 자동 갱신을 의미하지 않습니다.
+Airflow가 실행 중이면 **1시간 주기 자동 수집·처리·알림**을 수행합니다. 상시 운영을 위한 CD는 실제 배포 대상이 정해질 때 추가합니다. Tableau Demo는 실제 예보의 자동 갱신을 의미하지 않습니다.
 
 | 문제 | 접근 방식 | 결과 |
 |---|---|---|
