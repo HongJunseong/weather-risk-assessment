@@ -28,9 +28,10 @@
 행정경계 → 중심점 CSV → 고유 격자/호출 목록 → 기상청 수집 → 로컬 `data/live/dt=.../`
 → Bronze 계약 검사 → S3 Bronze → Spark Silver → Gold latest/daily → S3 Parquet export → Slack.
 Airflow는 이 흐름을 KST 기준 매시 10분에 시작하며 실패 작업을 5분 간격으로 최대 2회
-재시도한다. 실행 경로의 `dt`는 스케줄 구간 종료 시각의 연월일시를 사용한다.
+재시도한다. 실행 경로의 `dt`는 스케줄 구간 종료 시각의 연월일시를 사용한다. 행정경계
+기반 CSV와 격자 Parquet은 원본 또는 생성 코드가 바뀐 경우에만 다시 만든다.
 Tableau Public 데모는 운영 DAG와 분리하며, 내려받은 latest Parquet을 공개용 CSV로 변환해
-수동으로 게시한다.
+별도로 게시한다.
 
 코드 패키지명과 기존 실행 태스크의 DAG/task ID는 유지한다. `scripts/`도 DAG에서 import하는
 Python 모듈이므로 패키지 내부에 둔다. 별도 `src/` 계층은 도입하지 않았다.

@@ -4,12 +4,17 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
-from weather_risk_assessment.paths import DATA_ROOT as DATA
+from weather_risk_assessment.paths import DATA_ROOT as DATA, outputs_are_current
 SRC  = DATA / "admin_centroids.csv"           # 입력: 행정구역 중심점
 DST  = DATA / "unique_admin_centroids.csv"    # 출력: 호출용 고유 (nx,ny) 목록
 GRID = DATA / "grid_latlon.parquet"           # 추가 출력: 태풍 계산용 격자(lat/lon 포함)
 
 def main():
+    outputs = (DST, GRID)
+    if outputs_are_current(outputs, [SRC, Path(__file__)]):
+        print(f"reused: {DST}, {GRID}")
+        return
+
     # --- 입력 ---
     df = pd.read_csv(SRC, encoding="utf-8-sig")
 

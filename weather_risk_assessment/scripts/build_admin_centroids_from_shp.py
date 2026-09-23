@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import geopandas as gpd
 
-from weather_risk_assessment.paths import DATA_ROOT
+from weather_risk_assessment.paths import DATA_ROOT, outputs_are_current
 from weather_risk_assessment.utils.latlon_to_grid import latlon_to_grid
 
 IN_SHP = DATA_ROOT / "border" / "N3A_G0100000.shp"
@@ -12,6 +12,15 @@ OUT = DATA_ROOT / "admin_centroids.csv"
 
 
 def main():
+    sources = [
+        *IN_SHP.parent.glob(f"{IN_SHP.stem}.*"),
+        Path(__file__),
+        Path(latlon_to_grid.__code__.co_filename),
+    ]
+    if outputs_are_current([OUT], sources):
+        print(f"reused: {OUT}")
+        return
+
     # --- SHP 파일 읽기 ---
     try:
         gdf = gpd.read_file(IN_SHP)

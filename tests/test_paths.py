@@ -6,6 +6,8 @@ import sys
 import tempfile
 import unittest
 
+from weather_risk_assessment.paths import outputs_are_current
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -36,3 +38,15 @@ class PathTests(unittest.TestCase):
     def test_blank_env_uses_defaults(self):
         self.assertEqual(self.paths(ROOT, WEATHER_DATA_DIR='', DRE_SINK_DIR=''),
                          [str(ROOT / 'data'), str(ROOT / 'data/live')])
+
+    def test_outputs_are_reused_only_while_newer_than_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'source', Path(tmp) / 'output'
+            source.write_text('source')
+            output.write_text('output')
+            os.utime(source, ns=(1, 1))
+            os.utime(output, ns=(2, 2))
+
+            self.assertTrue(outputs_are_current([output], [source]))
+            os.utime(source, ns=(3, 3))
+            self.assertFalse(outputs_are_current([output], [source]))

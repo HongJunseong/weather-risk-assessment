@@ -110,7 +110,7 @@ flowchart LR
 ```
 
 ### Tableau Public 대시보드 *(Demo)*
-Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 CSV를 만듭니다. 운영 DAG는 Tableau 계정이나 인증정보를 사용하지 않으며, 무료 웹 편집기에서 CSV를 수동 게시합니다.
+Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 CSV를 만듭니다. Tableau 계정과 게시 과정은 운영 DAG에서 분리하며, 생성된 CSV는 무료 웹 편집기에 별도로 게시합니다.
 
 - 지역별 **종합 위험도** 및 지표별 비교 (UV, 강수, 바람, 폭염, 태풍)
 - **툴팁**에 예측 시각 및 위험도 구성요소 노출
@@ -124,7 +124,7 @@ Export된 Parquet에 행정구역 대표 좌표를 결합해 Tableau Public용 C
 
 ### 안정성 및 운영 기반 개선
 
-- **실행 격리·시간 정합성**: KST 실행 식별자를 수집부터 Silver까지 전달하고 실행별 저장 경로를 분리해 이전 실행 데이터의 혼입을 방지했습니다.
+- **실행 격리·시간 정합성**: KST 실행 식별자를 수집부터 Silver까지 전달하고 실행별 저장 경로를 분리해 이전 실행 데이터의 혼입을 방지했습니다. 고정 행정구역 산출물은 원본이나 생성 코드가 바뀔 때만 갱신합니다.
 - **데이터 품질 계약**: KMA 정상·오류 응답 fixture와 Bronze/Silver/Gold 검증으로 필수 컬럼, 키 중복, 시각, 위험도 범위 오류를 저장 전에 차단합니다.
 - **재현 가능한 실행·CI**: 런타임 의존성을 잠그고 GitHub Actions에서 단위 테스트, DAG import, Spark 변환, MinIO S3 통합, Docker 빌드와 Terraform 검증을 수행합니다.
 - **AWS 인프라 코드화**: Terraform으로 S3 보안·수명주기, 최소 권한 IAM 정책, 비용 Budget을 구성하고 S3 원격 state와 잠금을 적용했습니다.
@@ -149,7 +149,7 @@ Airflow가 실행 중이면 **1시간 주기 자동 수집·처리·알림**을 
 - **Python**: 3.11
 - **Workflow**: Apache Airflow 2.7.3 (Docker Compose)
 - **Processing**: pandas + PySpark 3.5.1
-- **Storage**: AWS S3 Delta Lake (Medallion Architecture)
+- **Storage**: AWS S3 Parquet + Delta Lake (Medallion Architecture)
 - **Alert**: Slack Incoming Webhook
 - **Visualization** *(demo)*: Tableau Public
 - **Infrastructure**: Docker Compose + Terraform (AWS S3 · IAM · Budgets)
@@ -181,5 +181,5 @@ docker compose --env-file .env -f docker/docker-compose.yaml up -d --build
 
 # 4) Airflow UI 접속
 # http://localhost:8080  (ID: airflow / PW: airflow)
-# weather_risk_assessment DAG 활성화 후 실행
+# weather_risk_assessment DAG를 활성화하면 매시 10분 자동 실행
 ```
