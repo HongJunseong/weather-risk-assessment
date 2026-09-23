@@ -248,13 +248,14 @@ def _fetch_vilage_singlepage(nx: int, ny: int, baseDate: str, baseTime: str) -> 
 
 
 # ---------------- main collector ----------------
-def collect_short_fcst(call_list_csv: Path = CALL_LIST,
-                       out_path: Path = DEFAULT_OUT,
+def collect_short_fcst(call_list_csv: str | Path = CALL_LIST,
+                       out_path: str | Path = DEFAULT_OUT,
                        categories: Optional[List[str]] = None,
                        run_dt: str | None = None) -> str:
     """
     여러 지점을 병렬 수집하여 +H시간(기본 6h)만 wide parquet 저장.
     """
+    out_path = Path(out_path)
     cats = categories or CATEGORIES
     log.info("[SHORT] target categories = %s", ",".join(cats))
 

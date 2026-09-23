@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
+import pendulum
 
+from weather_risk_assessment.collectors import short_forecast
 from weather_risk_assessment.collectors.short_forecast import (
     _parse_json_safely,
     _postprocess_wide,
@@ -68,6 +72,28 @@ class CollectorFixtureTests(unittest.TestCase):
         self.assertEqual(len(wide), 1)
         self.assertEqual(wide.iloc[0]["PCP"], 0.5)
         self.assertEqual(wide.iloc[0]["admin_code"], 11110)
+
+    def test_short_forecast_accepts_templated_string_output_path(self):
+        items = load_fixture("short_forecast_response.json")["response"]["body"]["items"]["item"]
+        targets = pd.DataFrame({"fcstDate": ["20250102"], "fcstTime": ["0800"]})
+        with tempfile.TemporaryDirectory() as tmp:
+            call_list = Path(tmp) / "call_list.csv"
+            call_list.write_text("nx,ny,admin_code\n60,127,11110\n", encoding="utf-8")
+            output = Path(tmp) / "dt=2025010208" / "short_fcst.parquet"
+            with (
+                patch.object(short_forecast, "API_KEY", "test-key"),
+                patch.object(short_forecast, "_fetch_vilage_singlepage", return_value=pd.DataFrame(items)),
+                patch.object(
+                    short_forecast,
+                    "_target_times_df",
+                    return_value=(targets, pendulum.datetime(2025, 1, 2, 8, tz="Asia/Seoul")),
+                ),
+            ):
+                result = short_forecast.collect_short_fcst(
+                    call_list_csv=call_list, out_path=str(output), run_dt="2025010208"
+                )
+            self.assertEqual(result, str(output))
+            self.assertTrue(output.is_file())
 
     def test_typhoon_items_have_hourly_track_inputs(self):
         track = _parse_track_items(load_fixture("typhoon_forecast_items.json"))
