@@ -60,6 +60,7 @@ class DagImportTests(unittest.TestCase):
                     "build_gold_risk_latest",
                     "build_gold_risk_daily",
                     "export_gold_parquet",
+                    "generate_quality_report",
                     "send_high_risk_alerts_to_kafka",
                 },
             )

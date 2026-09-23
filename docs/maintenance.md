@@ -147,6 +147,13 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
   실패를 가리지 않으며 네트워크 예외에 웹훅 주소를 포함하지 않는다.
 - KMA `baseDate/baseTime`이 실행 시각보다 4시간을 초과해 오래된 경우 Bronze 업로드 전에
   실패시킨다. 수집기의 네 차례 발표 시각 후보 탐색 범위는 허용한다.
+- `export_gold_parquet` 작업에 실행 시각별 이력 보존(`gold_export/history/dt=.../`)과
+  원자적 승격(Atomic Promotion)을 적용했다. 저장된 이력의 행 수와 스키마 검증이 완료된
+  뒤에만 최신본(`gold_export/risk_latest`)을 갱신하므로, Export 실패 시에도 직전 정상본이
+  안전하게 유지된다.
+- 파이프라인 수집률·결측률·Gold 행 수를 순수 코드로 자동 집계하는 경량 품질 리포터
+  (`generate_quality_report.py`)를 DAG에 추가하고, 매 실행 결과를 JSON 및 Markdown 요약
+  (`docs/latest_execution_report.md`)으로 자동 갱신하도록 구성했다.
 
 ## 후속 개선 우선순위
 

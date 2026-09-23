@@ -17,6 +17,7 @@
 - [폴더 구조와 데이터 경로](docs/architecture.md)
 - [개발 환경·운영 안내·점검 결과](docs/maintenance.md)
 - [엔지니어링 트러블슈팅 및 개선 기록](docs/troubleshooting.md)
+- [최신 실행 및 데이터 품질 리포트](docs/latest_execution_report.md)
 - [Bronze 데이터 계약](docs/data-contracts.md)
 - [Terraform AWS 인프라](infra/terraform/README.md)
 - [AI 작업 지침](AGENTS.md)

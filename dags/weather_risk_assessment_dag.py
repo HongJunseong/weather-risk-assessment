@@ -60,6 +60,9 @@ from weather_risk_assessment.alerts.slack_alert import (
     send_high_risk_alerts,
     send_task_failure_alert,
 )
+from weather_risk_assessment.scripts.generate_quality_report import (
+    generate_report as generate_quality_report_fn,
+)
 
 
 default_args = {
@@ -181,6 +184,15 @@ with DAG(
         ),
     )
 
+    t_generate_report = PythonOperator(
+        task_id="generate_quality_report",
+        python_callable=generate_quality_report_fn,
+        op_kwargs={
+            "run_dt": RUN_DT,
+            "sink_dir": RUN_DIR,
+        },
+    )
+
     # HIGH 이상 지역 Slack 알림 (기존 task_id는 실행 이력 호환을 위해 유지)
     t_send_alerts = PythonOperator(
         task_id="send_high_risk_alerts_to_kafka",
@@ -193,4 +205,4 @@ with DAG(
 
     t_make_admin_centroids >> t_make_admin_list >> t_collect_kma >> t_collect_short_fcst\
     >> [typhoon_task, uv_task] >> t_upload_bronze >> t_build_silver >> build_gold_risk_latest \
-    >> build_gold_risk_daily >> export_gold_parquet >> t_send_alerts
+    >> build_gold_risk_daily >> export_gold_parquet >> t_generate_report >> t_send_alerts
