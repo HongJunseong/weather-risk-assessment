@@ -6,11 +6,10 @@ from datetime import timedelta
 from pathlib import Path
 import pendulum
 
-from airflow import DAG
-from airflow.decorators import task
-from airflow.operators.python import PythonOperator
+from airflow.sdk import DAG, task
+from airflow.providers.standard.operators.python import PythonOperator
 
-from airflow.operators.bash import BashOperator
+from airflow.providers.standard.operators.bash import BashOperator
 from weather_risk_assessment.scripts.upload_bronze_to_s3 import main as upload_bronze_main
 
 from weather_risk_assessment.paths import DATA_ROOT, SINK_DIR
