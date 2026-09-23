@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 
 from weather_risk_assessment.jobs.spark_runtime import (
     create_spark_session,
@@ -20,13 +19,12 @@ def validate_export_sources(latest, daily, run_dt: str = "") -> tuple[int, int]:
         bounds = latest.agg(
             functions.min("dt").alias("first_run"),
             functions.max("dt").alias("last_run"),
-            functions.min("fcst_ts").alias("first_forecast"),
+            functions.date_format(functions.min("fcst_ts"), "yyyyMMddHH").alias("first_forecast"),
         ).first()
-        run_time = datetime.strptime(run_dt, "%Y%m%d%H")
         if (
             str(bounds.first_run) != run_dt
             or str(bounds.last_run) != run_dt
-            or bounds.first_forecast < run_time
+            or not bounds.first_forecast or bounds.first_forecast < run_dt
         ):
             raise ValueError(f"Gold export is stale for {run_dt}: {bounds}")
     return latest_count, daily_count

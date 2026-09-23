@@ -34,6 +34,7 @@ class MedallionPipelineIntegrationTests(unittest.TestCase):
             .config("spark.ui.enabled", "false")
             .config("spark.ui.showConsoleProgress", "false")
             .config("spark.sql.shuffle.partitions", "1")
+            .config("spark.sql.session.timeZone", "Asia/Seoul")
             .getOrCreate()
         )
         cls.spark.sparkContext.setLogLevel("ERROR")
