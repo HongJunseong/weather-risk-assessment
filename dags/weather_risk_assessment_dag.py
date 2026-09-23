@@ -193,9 +193,9 @@ with DAG(
         },
     )
 
-    # HIGH 이상 지역 Slack 알림 (기존 task_id는 실행 이력 호환을 위해 유지)
+    # HIGH 이상 지역 Slack 알림
     t_send_alerts = PythonOperator(
-        task_id="send_high_risk_alerts_to_kafka",
+        task_id="send_high_risk_alerts",
         python_callable=send_high_risk_alerts,
     )
 

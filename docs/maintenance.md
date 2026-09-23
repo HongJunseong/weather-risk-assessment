@@ -109,7 +109,7 @@ KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한
 - import 시 데이터 디렉터리를 생성하는 동작을 줄이고 저장 시 생성하도록 했다.
 - GeoJSON 태스크는 지원하지 않는 `run_dir` 인자를 전달했고 입력도 upstream에서 생성되지
   않아 DAG에서 분리했으며, 시각화 방향을 Tableau Public으로 정하면서 관련 도구를 제거했다.
-- Slack 태스크의 Kafka라는 주석은 정정했다. 기존 task_id는 이력 호환을 위해 유지했다.
+- Slack 태스크의 레거시 task_id(send_high_risk_alerts_to_kafka)를 실제 동작에 맞게 send_high_risk_alerts로 정비했다.
 - README의 시간별 스케줄·Airflow 재시도 설명을 실제 설정에 맞게 정정했다.
 - DAG의 `data_interval_start`를 공통 실행 식별자로 수집기부터 Silver까지 전달하고,
   로컬 수집 결과를 실행별 디렉터리로 분리했다.
