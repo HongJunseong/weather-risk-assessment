@@ -163,9 +163,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      AIRFLOW_VERSION: "2.7.3"
+      AIRFLOW_VERSION: "3.3.2"
       PYTHON_VERSION: "3.11"
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__SCHEDULER__CREATE_CRON_DATA_INTERVALS: "True"
 
     steps:
       - name: Check out repository
@@ -182,7 +183,7 @@ jobs:
         run: |
           CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
           python -m pip install --upgrade pip
-          python -m pip install "apache-airflow==${AIRFLOW_VERSION}" -r requirements/dev.txt --constraint "${CONSTRAINT_URL}"
+          python -m pip install "apache-airflow[celery,postgres]==${AIRFLOW_VERSION}" apache-airflow-providers-fab apache-airflow-providers-standard -r requirements/dev.txt --constraint "${CONSTRAINT_URL}"
 
       - name: Load DAG with Airflow
         run: python -m unittest discover -s tests -p "test_dag_import.py" -v

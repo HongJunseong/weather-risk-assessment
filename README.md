@@ -2,7 +2,7 @@
 *Near Real-time Weather Risk Scoring Pipeline*
 
 ![python](https://img.shields.io/badge/Python-3.11-blue)
-![airflow](https://img.shields.io/badge/Apache%20Airflow-2.7.3-017CEE)
+![airflow](https://img.shields.io/badge/Apache%20Airflow-3.3.2-017CEE)
 ![spark](https://img.shields.io/badge/Apache%20Spark-3.5.1-E25A1C)
 ![aws s3](https://img.shields.io/badge/AWS-S3%20Delta%20Lake-FF9900)
 ![slack](https://img.shields.io/badge/Slack-Alert-4A154B)
@@ -147,7 +147,7 @@ Airflow가 실행 중이면 **1시간 주기 자동 수집·처리·알림**을 
 ## 인프라 및 개발 환경
 
 - **Python**: 3.11
-- **Workflow**: Apache Airflow 2.7.3 (Docker Compose)
+- **Workflow**: Apache Airflow 3.3.2 (Docker Compose)
 - **Processing**: pandas + PySpark 3.5.1
 - **Storage**: AWS S3 Parquet + Delta Lake (Medallion Architecture)
 - **Alert**: Slack Incoming Webhook
@@ -173,11 +173,12 @@ cd weather-risk-assessment
 
 # 2) .env 생성 (.env.example 참고)
 cp .env.example .env
-# .env 파일에 KMA_API_KEY, AWS 키, S3 버킷명, Slack Webhook URL 입력
+# .env에 KMA_API_KEY, AWS 키, S3 버킷명, Slack Webhook URL 입력
+# AIRFLOW_JWT_SECRET은 openssl rand -hex 32로 생성해 입력 (기존 .env는 덮어쓰지 않음)
 
 # 3) Airflow 컨테이너 실행
 unzip data/border/N3A_G0100000.zip -d data/border
-docker compose --env-file .env -f docker/docker-compose.yaml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yaml up -d --build --remove-orphans
 
 # 4) Airflow UI 접속
 # http://localhost:8080  (ID: airflow / PW: airflow)

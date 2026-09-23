@@ -45,14 +45,14 @@ python -m unittest tests.test_aws_s3_integration -q
 로컬 모듈 실행 시 환경변수를 미리 설정한다. `.env`는 Compose가 컨테이너에 주입하며,
 개별 Python 모듈이 자동으로 읽는 것으로 가정하지 않는다.
 
-런타임 버전을 갱신할 때는 Airflow 2.7.3 공식 constraints를 기준으로 한다. 프로젝트가
-직접 고정한 PySpark만 공식 버전과 다르므로 해당 항목을 제외하고 잠금 파일을 다시 만든 뒤
-전체 테스트와 Docker 빌드를 확인한다.
+런타임 버전을 갱신할 때는 Airflow 3.3.2 공식 constraints를 기준으로 한다. Spark 3.5와
+호환되도록 직접 고정한 PySpark, pandas, NumPy, PyArrow는 공식 목록에서 제외하고
+잠금 파일을 다시 만든 뒤 Spark 테스트와 Docker 빌드를 확인한다.
 
 ```bash
 curl -fsSLo /tmp/airflow-constraints-3.11.txt \
-  https://raw.githubusercontent.com/apache/airflow/constraints-2.7.3/constraints-3.11.txt
-sed -E '/^pyspark==/d' \
+  https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.11.txt
+sed -E '/^(pyspark|pandas|numpy|pyarrow)==/d' \
   /tmp/airflow-constraints-3.11.txt > /tmp/weather-risk-constraints.txt
 uv pip compile requirements/runtime.in \
   --constraint /tmp/weather-risk-constraints.txt \
@@ -71,18 +71,26 @@ KMA 수집과 S3 읽기·쓰기를 포함한 통합 테스트에서만 `.env`의
 
 ```bash
 cp .env.example .env
-# .env에 필요한 키와 버킷을 설정하고 AIRFLOW_UID에 호스트 UID(id -u)를 입력
+# .env에 키·버킷·AIRFLOW_UID를 채우고 AIRFLOW_JWT_SECRET은 openssl rand -hex 32로 생성
+# 기존 .env는 덮어쓰지 않는다. JWT 키는 비워두면 Compose 실행이 중단된다.
 unzip data/border/N3A_G0100000.zip -d data/border
 # data/border/N3A_G0100000.shp 및 동반 파일이 있는지 확인
 
 docker compose --env-file .env -f docker/docker-compose.yaml config --quiet
-docker compose --env-file .env -f docker/docker-compose.yaml up -d --build
+docker compose --env-file .env -f docker/docker-compose.yaml up -d --build --remove-orphans
 ```
 
 Airflow UI는 `http://localhost:8080`이다. DAG는 기상청 자료 게시 시간을 고려해 매시
 10분에 실행하며(`10 * * * *`), 실패 작업은 5분 간격으로 최대 2회 재시도한다. 과거 실행은
 자동으로 소급하지 않고(`catchup=False`), 한 번에 하나의 DAG 실행만 허용한다.
 KMA/S3를 사용하는 DAG 전체 실행은 외부 통신과 쓰기를 수반한다.
+
+기존 Airflow 2.7.3 메타데이터 DB를 승계할 때는 먼저 DAG를 일시중지하고 실행 중인
+태스크 종료를 확인한다. PostgreSQL 전체를 별도 안전한 경로에 `pg_dump -Fc`로 백업하고
+백업 파일이 읽히는지 확인한 뒤 기존 Airflow 서비스를 중지한다. 그 후에만 새 Compose의
+`airflow-init`가 `airflow db migrate`를 수행하도록 기동한다. 마이그레이션 후 이전
+이미지로만 되돌릴 수 없으며 DB 백업 복원이 필요하다. `docker compose down -v`는
+메타데이터를 삭제하므로 실행하지 않는다.
 
 ## 이번 점검에서 정리한 사항
 

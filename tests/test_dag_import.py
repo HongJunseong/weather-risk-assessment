@@ -23,12 +23,13 @@ class DagImportTests(unittest.TestCase):
         ):
             from airflow.models import DagBag
 
-            dag_bag = DagBag(dag_folder=str(ROOT / "dags"), include_examples=False)
+            dag_bag = DagBag(dag_folder=str(ROOT / "dags"))
             self.assertEqual(dag_bag.import_errors, {})
 
             dag = dag_bag.dags.get("weather_risk_assessment")
             self.assertIsNotNone(dag)
-            self.assertEqual(dag.schedule_interval, "10 * * * *")
+            self.assertEqual(dag.schedule, "10 * * * *")
+            self.assertEqual(type(dag.timetable).__name__, "CronDataIntervalTimetable")
             self.assertFalse(dag.catchup)
             self.assertEqual(dag.max_active_runs, 1)
             self.assertEqual(dag.dagrun_timeout, timedelta(minutes=55))
@@ -36,7 +37,15 @@ class DagImportTests(unittest.TestCase):
             self.assertTrue(
                 all(task.retry_delay.total_seconds() == 300 for task in dag.tasks)
             )
-            self.assertTrue(all(callable(task.on_failure_callback) for task in dag.tasks))
+            self.assertTrue(
+                all(
+                    all(callable(callback) for callback in (
+                        task.on_failure_callback
+                        if isinstance(task.on_failure_callback, list)
+                        else [task.on_failure_callback]
+                    )) for task in dag.tasks
+                )
+            )
             self.assertEqual(
                 set(dag.task_ids),
                 {
