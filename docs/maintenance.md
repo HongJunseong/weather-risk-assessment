@@ -63,7 +63,7 @@ uv pip compile requirements/runtime.in \
 
 단위·계약 테스트와 Spark Job import 테스트는 실제 API 키나 AWS 자격증명 없이 실행한다.
 KMA 수집과 S3 읽기·쓰기를 포함한 통합 테스트에서만 `.env`의 `KMA_API_KEY`,
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
 `S3_RISK_STREAM_BUCKET`을 사용한다. 알림 종단간 테스트에는 `SLACK_WEBHOOK_URL`이 추가로
 필요하다. 실제 값은 저장소에 커밋하지 않는다.
 
