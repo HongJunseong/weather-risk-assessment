@@ -72,6 +72,15 @@ class SparkJobRuntimeTests(unittest.TestCase):
         self.assertEqual(paths["source"], "s3a://risk-data/silver")
         self.assertEqual(paths["output"], "file:///tmp/output")
 
+    def test_export_gold_parquet_parses_history_args(self):
+        from weather_risk_assessment.jobs.export_gold_parquet import parse_args
+
+        args = parse_args(["--run_dt", "2026092318", "--bucket", "my-bucket"])
+        self.assertEqual(args.run_dt, "2026092318")
+        self.assertEqual(args.bucket, "my-bucket")
+        self.assertEqual(args.latest_history, "")
+        self.assertEqual(args.daily_history, "")
+
 
 if __name__ == "__main__":
     unittest.main()
