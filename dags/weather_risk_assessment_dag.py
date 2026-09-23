@@ -178,7 +178,7 @@ with DAG(
     export_gold_parquet = BashOperator(
         task_id="export_gold_parquet",
         bash_command=(
-            f"{SPARK_SUBMIT} {JOB_ROOT / 'export_gold_parquet.py'}"
+            f"{SPARK_SUBMIT} {JOB_ROOT / 'export_gold_parquet.py'} --run_dt {RUN_DT}"
         ),
     )
 

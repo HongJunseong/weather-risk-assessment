@@ -107,11 +107,10 @@ class BronzeContractTests(unittest.TestCase):
 
         self.assertEqual(report.errors, [])
 
-    def test_empty_optional_dataset_warns(self):
+    def test_empty_uv_dataset_fails(self):
         columns = list(CONTRACTS["uv"].required_columns)
         report = validate_bronze_frame("uv", pd.DataFrame(columns=columns))
-        self.assertEqual(report.errors, [])
-        self.assertEqual([issue.code for issue in report.warnings], ["empty"])
+        self.assertEqual([issue.code for issue in report.errors], ["empty"])
 
     @patch.dict("os.environ", {"S3_RISK_STREAM_BUCKET": "test-risk-bucket"})
     @patch("weather_risk_assessment.scripts.upload_bronze_to_s3.boto3.client")

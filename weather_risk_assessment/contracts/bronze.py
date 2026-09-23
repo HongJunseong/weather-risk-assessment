@@ -93,7 +93,6 @@ CONTRACTS: dict[str, DatasetContract] = {
         keys=("fcstDate", "fcstTime", "nx", "ny"),
         required_columns=frozenset({"fcstDate", "fcstTime", "nx", "ny", "UVI"}),
         metric_columns=frozenset({"UVI"}),
-        allow_empty=True,
     ),
 }
 

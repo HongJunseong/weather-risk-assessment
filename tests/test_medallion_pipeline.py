@@ -8,6 +8,7 @@ import pandas as pd
 from weather_risk_assessment.contracts.medallion import validate_spark_frame
 from weather_risk_assessment.jobs.build_gold_risk_daily import build_daily
 from weather_risk_assessment.jobs.build_gold_risk_latest import build_latest
+from weather_risk_assessment.jobs.export_gold_parquet import validate_export_sources
 from weather_risk_assessment.jobs.build_silver_from_bronze import build_silver_frame
 
 
@@ -100,6 +101,10 @@ class MedallionPipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(validate_spark_frame("silver_risk_enriched", silver).issues, [])
             self.assertEqual(validate_spark_frame("gold_risk_latest", latest).issues, [])
             self.assertEqual(validate_spark_frame("gold_risk_daily", daily).issues, [])
+            self.assertEqual(validate_export_sources(latest, daily, RUN_DT), (1, 1))
+            with self.assertRaisesRegex(ValueError, "Gold export is stale"):
+                validate_export_sources(latest, daily, "2025010210")
+
 
 
 if __name__ == "__main__":

@@ -160,6 +160,29 @@ class CollectorFixtureTests(unittest.TestCase):
         self.assertEqual(base_dt.strftime("%Y%m%d%H"), "2026092312")
         self.assertEqual(rel, {0: 7.0, 3: 4.0})
 
+    def test_uv_missing_half_of_regions_fails_before_writing(self):
+        call_list = pd.DataFrame({
+            "admin_code": ["1100000000", "2200000000"],
+            "nx": [60, 61],
+            "ny": [127, 127],
+        })
+        target = pd.DatetimeIndex(["2026-09-23 15:00"])
+        base = pendulum.datetime(2026, 9, 23, 15, tz="Asia/Seoul")
+
+        def find_base(code, anchor, back_hours=48):
+            return (base, {0: 2.0}) if code == "1100000000" else (None, {})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "uv.parquet"
+            with (
+                patch.object(uv_forecast, "_read_call_list", return_value=call_list),
+                patch.object(uv_forecast, "_load_targets_from_ultra_shortfcst", return_value=target),
+                patch.object(uv_forecast, "_find_base", side_effect=find_base),
+            ):
+                with self.assertRaisesRegex(ValueError, "UV coverage too low: 1/2"):
+                    uv_forecast.fetch_and_save_uv_wide(out_path=output, run_dt="2026092315")
+            self.assertFalse(output.exists())
+
     def test_uv_area_code_alias_mapping(self):
         # 2026년 행정구역 개편 코드 매핑 검증
         self.assertEqual(uv_forecast.AREA_CODE_ALIAS["2911000000"], "1221000000")  # 광주 동구

@@ -32,6 +32,7 @@ FORCE_HTTP = os.getenv("KMA_FORCE_HTTP", "0") == "1"             # HTTP 강제 �
 SKIP_SSL   = os.getenv("KMA_SKIP_SSL_VERIFY", "0") == "1"        # SSL 검증 생략 여부
 LOG_LEVEL  = os.getenv("KMA_LOG_LEVEL", "INFO").upper()
 HORIZON_H  = int(os.getenv("UV_HORIZON_HOURS", "6"))             # 예보 범위 (기본 6시간)
+MIN_UV_COVERAGE = 0.95
 
 logging.basicConfig(level=LOG_LEVEL, format="%(message)s")
 log = logging.getLogger("uv_forecast")
@@ -328,6 +329,7 @@ def fetch_and_save_uv_wide(
     log.info("[UV] target hours = %s", ", ".join(pd.Index(targets).strftime("%Y%m%d %H:%M").tolist()))
 
     rows: List[Tuple[int, int, str, str, int]] = []
+    missing_areas: List[str] = []
     base_cache: Dict[str, Tuple[Optional[pendulum.DateTime], Dict[int, float]]] = {}
 
     def _get_base_with_fallback(code: str) -> Tuple[Optional[pendulum.DateTime], Dict[int, float]]:
@@ -355,6 +357,7 @@ def fetch_and_save_uv_wide(
             raise
         if not base:
             log.warning(f"[UV] area={area_no} 데이터 없음 (anchor {anchor.format('YYYYMMDDHH')})")
+            missing_areas.append(str(area_no))
             continue
 
         # 상대 오프셋 → 실제 시계열 변환 후 보간
@@ -371,6 +374,13 @@ def fetch_and_save_uv_wide(
         out = out.sort_values(["fcstDate", "fcstTime", "nx", "ny"]).reset_index(drop=True)
     else:
         out = pd.DataFrame(columns=["nx", "ny", "fcstDate", "fcstTime", "UVI"])
+
+    expected_rows = len(call) * len(targets)
+    if not expected_rows or len(out) / expected_rows < MIN_UV_COVERAGE:
+        raise ValueError(
+            f"UV coverage too low: {len(out)}/{expected_rows} rows "
+            f"({len(missing_areas)} missing areas: {missing_areas[:10]})"
+        )
 
     # 저장
     target = Path(out_path) if out_path else DEFAULT_OUT
