@@ -224,20 +224,38 @@ def generate_report(
         if out_json is not None
         else DATA_ROOT / "metrics" / f"dt={resolved_run_dt}" / "quality_report.json"
     )
-    resolved_json.parent.mkdir(parents=True, exist_ok=True)
-    resolved_json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    log.info("[REPORT] Saved JSON metrics to %s", resolved_json)
+    try:
+        resolved_json.parent.mkdir(parents=True, exist_ok=True)
+        resolved_json.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        log.info("[REPORT] Saved JSON metrics to %s", resolved_json)
+    except Exception as exc:
+        log.warning("[REPORT] Failed to save JSON metrics to %s: %s", resolved_json, exc)
 
     # Save Markdown report
-    resolved_md = (
-        Path(out_md)
-        if out_md is not None
-        else Path(__file__).resolve().parents[2] / "docs" / "latest_execution_report.md"
-    )
-    resolved_md.parent.mkdir(parents=True, exist_ok=True)
-    md_content = format_markdown_report(report)
-    resolved_md.write_text(md_content, encoding="utf-8")
-    log.info("[REPORT] Saved Markdown summary to %s", resolved_md)
+    if out_md is not None:
+        resolved_md = Path(out_md)
+    elif os.environ.get("DOCS_DIR"):
+        resolved_md = Path(os.environ["DOCS_DIR"]) / "latest_execution_report.md"
+    elif Path("/opt/airflow/docs").exists():
+        resolved_md = Path("/opt/airflow/docs") / "latest_execution_report.md"
+    else:
+        resolved_md = Path(__file__).resolve().parents[2] / "docs" / "latest_execution_report.md"
+
+    try:
+        resolved_md.parent.mkdir(parents=True, exist_ok=True)
+        md_content = format_markdown_report(report)
+        resolved_md.write_text(md_content, encoding="utf-8")
+        log.info("[REPORT] Saved Markdown summary to %s", resolved_md)
+    except Exception as exc:
+        log.warning("[REPORT] Could not save Markdown summary to %s: %s", resolved_md, exc)
+        # Fallback to local metrics directory
+        try:
+            fallback_md = DATA_ROOT / "metrics" / f"dt={resolved_run_dt}" / "quality_report.md"
+            fallback_md.parent.mkdir(parents=True, exist_ok=True)
+            fallback_md.write_text(format_markdown_report(report), encoding="utf-8")
+            log.info("[REPORT] Saved fallback Markdown summary to %s", fallback_md)
+        except Exception as fb_exc:
+            log.warning("[REPORT] Fallback Markdown save also failed: %s", fb_exc)
 
     # Optional S3 upload if bucket configured
     bucket = os.getenv("S3_RISK_STREAM_BUCKET", "").strip()
