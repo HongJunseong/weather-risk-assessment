@@ -87,6 +87,26 @@ class BronzeContractTests(unittest.TestCase):
         report = validate_bronze_frame("uv", frame)
         self.assertEqual([issue.code for issue in report.errors], ["invalid_fcst_time"])
 
+    def test_source_time_older_than_fallback_window_is_rejected(self):
+        frame = valid_frames()["ultra_shortfcst"]
+        frame.loc[0, ["baseDate", "baseTime"]] = ["20250102", "0300"]
+
+        report = validate_bronze_frame(
+            "ultra_shortfcst", frame, run_dt="2025010208"
+        )
+
+        self.assertEqual([issue.code for issue in report.errors], ["stale_source_time"])
+
+    def test_four_hour_old_source_is_within_fallback_window(self):
+        frame = valid_frames()["ultra_nowcast"]
+        frame.loc[0, ["baseDate", "baseTime"]] = ["20250102", "0400"]
+
+        report = validate_bronze_frame(
+            "ultra_nowcast", frame, run_dt="2025010208"
+        )
+
+        self.assertEqual(report.errors, [])
+
     def test_empty_optional_dataset_warns(self):
         columns = list(CONTRACTS["uv"].required_columns)
         report = validate_bronze_frame("uv", pd.DataFrame(columns=columns))
@@ -118,4 +138,22 @@ class BronzeContractTests(unittest.TestCase):
             run_dir.mkdir()
             with redirect_stdout(io.StringIO()), self.assertRaises(ValueError):
                 upload_bronze(run_dt="2025010208", sink_dir=run_dir)
+            client_factory.assert_not_called()
+
+    @patch.dict("os.environ", {"S3_RISK_STREAM_BUCKET": "test-risk-bucket"})
+    @patch("weather_risk_assessment.scripts.upload_bronze_to_s3.boto3.client")
+    def test_stale_source_fails_before_s3_client_creation(self, client_factory):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "dt=2025010208"
+            run_dir.mkdir()
+            self.write_valid_run(run_dir)
+            stale = valid_frames()["ultra_shortfcst"]
+            stale.loc[0, ["baseDate", "baseTime"]] = ["20250102", "0300"]
+            stale.to_parquet(run_dir / CONTRACTS["ultra_shortfcst"].filename, index=False)
+
+            with redirect_stdout(io.StringIO()), self.assertRaisesRegex(
+                ValueError, "stale_source_time"
+            ):
+                upload_bronze(run_dt="2025010208", sink_dir=run_dir)
+
             client_factory.assert_not_called()

@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+MAX_SOURCE_AGE_HOURS = 4
+
 
 @dataclass(frozen=True)
 class DatasetContract:
@@ -100,7 +102,9 @@ def _issue(level: str, dataset: str, code: str, message: str) -> ValidationIssue
     return ValidationIssue(level=level, dataset=dataset, code=code, message=message)
 
 
-def validate_bronze_frame(dataset: str, frame: pd.DataFrame) -> BronzeValidationReport:
+def validate_bronze_frame(
+    dataset: str, frame: pd.DataFrame, run_dt: str | None = None
+) -> BronzeValidationReport:
     """Validate one normalized collector output against its Bronze contract."""
     try:
         contract = CONTRACTS[dataset]
@@ -165,6 +169,30 @@ def validate_bronze_frame(dataset: str, frame: pd.DataFrame) -> BronzeValidation
                     )
                 )
 
+    if run_dt and {"baseDate", "baseTime"}.issubset(columns):
+        run_time = pd.to_datetime(run_dt, format="%Y%m%d%H", errors="raise")
+        source_time = pd.to_datetime(
+            frame["baseDate"].astype(str).str.replace(".0", "", regex=False)
+            + frame["baseTime"]
+            .astype(str)
+            .str.replace(".0", "", regex=False)
+            .str.zfill(4),
+            format="%Y%m%d%H%M",
+            errors="coerce",
+        )
+        stale_count = int(
+            (source_time < run_time - pd.Timedelta(hours=MAX_SOURCE_AGE_HOURS)).sum()
+        )
+        if stale_count:
+            issues.append(
+                _issue(
+                    "error",
+                    dataset,
+                    "stale_source_time",
+                    f"{stale_count} rows older than {MAX_SOURCE_AGE_HOURS} hours",
+                )
+            )
+
     for coordinate in ("nx", "ny"):
         invalid_count = int(pd.to_numeric(frame[coordinate], errors="coerce").isna().sum())
         if invalid_count:
@@ -180,7 +208,9 @@ def validate_bronze_frame(dataset: str, frame: pd.DataFrame) -> BronzeValidation
     return BronzeValidationReport(issues)
 
 
-def validate_bronze_directory(directory: str | Path) -> BronzeValidationReport:
+def validate_bronze_directory(
+    directory: str | Path, run_dt: str | None = None
+) -> BronzeValidationReport:
     """Validate all collector files expected for one pipeline run."""
     directory = Path(directory)
     issues: list[ValidationIssue] = []
@@ -194,5 +224,5 @@ def validate_bronze_directory(directory: str | Path) -> BronzeValidationReport:
         except Exception as exc:
             issues.append(_issue("error", dataset, "unreadable_file", str(exc)))
             continue
-        issues.extend(validate_bronze_frame(dataset, frame).issues)
+        issues.extend(validate_bronze_frame(dataset, frame, run_dt=run_dt).issues)
     return BronzeValidationReport(issues)

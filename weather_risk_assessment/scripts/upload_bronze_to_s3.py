@@ -41,7 +41,7 @@ def main(run_dt: str | None = None, sink_dir: str | Path | None = None) -> None:
             f"sink_dir must end with dt={run_dt}, got {sink_dir}"
         )
 
-    report = validate_bronze_directory(sink_dir)
+    report = validate_bronze_directory(sink_dir, run_dt=run_dt)
     for issue in report.issues:
         print(
             f"[CONTRACT][{issue.level.upper()}] "
